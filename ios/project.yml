@@ -1,0 +1,22 @@
+name: Nucleo
+options:
+  minimumXcodeGenVersion: 2.38.0
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+targets:
+  Nucleo:
+    type: application
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: Nucleo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nucleo.app
+        SWIFT_VERSION: 5.10
+        TARGETED_DEVICE_FAMILY: '1,2'
+    dependencies:
+      - package: Supabase
+        product: Supabase
