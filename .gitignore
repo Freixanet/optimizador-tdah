@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+!.env.staging.example
+
+# Native build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+ios/DerivedData/
+ios/**/*.xcuserstate
