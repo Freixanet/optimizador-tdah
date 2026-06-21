@@ -1,1 +1,6 @@
-{"name":"Untitled","description":"","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}
+{
+  "name": "Nucleo",
+  "description": "Convierte caos en mapas de acción: destila texto denso, transcripciones, enlaces y PDFs en contenido estructurado y fácil de consumir.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

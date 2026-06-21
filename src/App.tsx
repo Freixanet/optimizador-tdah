@@ -1,138 +1,439 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { 
-  Sparkles, 
-  Wand2, 
-  Brain, 
-  ArrowRight, 
-  Check, 
-  AlertTriangle, 
-  Info, 
+import React, { useState, useRef, useMemo, useCallback } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import {
+  ArrowRight,
+  ArrowUp,
+  Check,
+  AlertTriangle,
+  Info,
   ChevronRight,
-  RefreshCcw,
+  ChevronDown,
   CheckCircle2,
-  FileText,
-  Map,
-  Youtube,
-  Upload,
   X,
   File,
-  Link2,
   Moon,
-  Sun
+  Sun,
+  Clock,
+  Layers,
+  List,
+  Menu,
+  History,
+  Settings,
+  LogOut,
+  SquarePen,
+  Plus,
+  Camera,
+  Paperclip,
 } from 'lucide-react';
+import HistoryPanel from './components/HistoryPanel';
+import AppIcon from './components/AppIcon';
+import LoadingState from './components/LoadingState';
+import {
+  getInitialModelPreference,
+  MODEL_OPTIONS,
+  saveModelPreference,
+  type ModelPreference,
+} from './modelPreference';
+import {
+  createEntry,
+  deleteEntry,
+  getActiveEntry,
+  loadHistory,
+  saveHistory,
+  setActiveId,
+  togglePinEntry,
+  updateActiveSession,
+  type HistoryStore,
+  type SourceType,
+  type HistoryEntry,
+} from './history';
+import {
+  deleteCloudHistoryEntry,
+  migrateLocalHistory,
+  pullCloudHistory,
+  pushHistoryEntry,
+  signInWith,
+  signOut,
+} from './cloudHistory';
+import { isCloudSyncConfigured, supabase } from './supabase';
 
-const SYSTEM_PROMPT = `Eres un "Optimizador TDAH". Tu objetivo es extraer, destilar y estructurar el conocimiento de CUALQUIER texto, nota caótica o transcripción cruda de YouTube.
-
-REGLAS DE ORO ESTRICTAS:
-1. ACEPTA EL CAOS: Vas a recibir textos sin puntuación, inconexos o mal formateados. Tu trabajo es encontrar el valor y darle sentido.
-2. PROHIBIDO RENDIRSE: NUNCA devuelvas un JSON con mensajes de "Fallo en procesamiento". Siempre extrae el núcleo, haciendo tu mejor esfuerzo.
-3. NO INVENTES: Basa tus deducciones exclusivamente en el texto proporcionado.
-4. TEXTO OBLIGATORIO: El campo "text" dentro de los bloques de "content" NUNCA puede estar vacío. Debes rellenarlo siempre con información detallada.
-
-ESTRUCTURA DE TU RESPUESTA:
-Debes responder ÚNICAMENTE con un objeto JSON válido que cumpla esta estructura exacta:
-
-{
-  "title": "Un título MUY corto y directo (max 5 palabras)",
-  "coreIdea": "La idea principal o el 'Núcleo' absoluto del contenido. (1 frase impactante)",
-  "coreSupport": "Contexto breve que apoya el núcleo. (Máximo 2 frases)",
-  "tldr": [
-    { "title": "Concepto 1", "desc": "Explicación en 1 línea" },
-    { "title": "Concepto 2", "desc": "Explicación en 1 línea" },
-    { "title": "Concepto 3", "desc": "Explicación en 1 línea" }
-  ],
-  "steps": [
-    {
-      "id": "paso-1",
-      "shortNav": "Etiqueta Corta",
-      "title": "Título de la sección o paso",
-      "time": "Tiempo est. (ej: 2 min)",
-      "content": [
-        { "type": "prose", "text": "Párrafo OBLIGATORIO de explicación directa y detallada." },
-        { "type": "callout", "kind": "action", "text": "Mensaje OBLIGATORIO destacado de acción." },
-        { "type": "list", "text": "Resumen de la lista OBLIGATORIO", "items": [{"strong": "Punto clave", "span": "Detalle secundario"}] }
-      ]
-    }
-  ]
-}
-
-No incluyas markdown, ni comentarios, solo el JSON puro.`;
-
-const schema = {
-  type: "OBJECT",
-  properties: {
-    title: { type: "STRING" },
-    coreIdea: { type: "STRING" },
-    coreSupport: { type: "STRING" },
-    tldr: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          title: { type: "STRING" },
-          desc: { type: "STRING" }
-        },
-        required: ["title", "desc"]
-      }
-    },
-    steps: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          id: { type: "STRING" },
-          shortNav: { type: "STRING" },
-          title: { type: "STRING" },
-          time: { type: "STRING" },
-          content: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                type: { type: "STRING", description: "Opciones: 'prose', 'callout', 'list'" },
-                text: { type: "STRING", description: "CONTENIDO ESCRITO DEL BLOQUE. ESTO ES ESTRICTAMENTE OBLIGATORIO. NO LO DEJES VACÍO." },
-                kind: { type: "STRING", description: "Opciones: 'action', 'info', 'alert'" },
-                items: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      strong: { type: "STRING" },
-                      span: { type: "STRING" }
-                    },
-                    required: ["strong"]
-                  }
-                }
-              },
-              required: ["type", "text"]
-            }
-          }
-        },
-        required: ["id", "shortNav", "title", "content"]
-      }
-    }
-  },
-  required: ["title", "coreIdea", "coreSupport", "tldr", "steps"]
+type UploadedFile = {
+  name: string;
+  size: number;
+  isPdf?: boolean;
+  isImage?: boolean;
+  fileData?: string;
+  mimeType?: string;
+  previewUrl?: string;
 };
 
+const DESKTOP_BREAKPOINT = 1024;
+const RECENT_IMAGES_KEY = 'nucleo-recent-images';
+const MAX_RECENT_IMAGES = 8;
+const IMAGE_MAX_DIMENSION = 1024;
+
+function loadRecentImages(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(RECENT_IMAGES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Downscales images to a max dimension and re-encodes as JPEG. This keeps both
+// the network payload to Gemini and the localStorage "recents" cache small.
+async function processImageFile(
+  file: File
+): Promise<{ dataUrl: string; base64: string; mimeType: string }> {
+  const originalDataUrl = await readFileAsDataUrl(file);
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new window.Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      image.src = originalDataUrl;
+    });
+
+    let { width, height } = img;
+    if (width > IMAGE_MAX_DIMENSION || height > IMAGE_MAX_DIMENSION) {
+      const scale = IMAGE_MAX_DIMENSION / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas no disponible.');
+
+    ctx.drawImage(img, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    return { dataUrl, base64: dataUrl.split(',')[1] ?? '', mimeType: 'image/jpeg' };
+  } catch {
+    return {
+      dataUrl: originalDataUrl,
+      base64: originalDataUrl.split(',')[1] ?? '',
+      mimeType: file.type || 'image/jpeg',
+    };
+  }
+}
+const PAGE_BOTTOM_PAD_PX = 24;
+const CONTENT_FOOTER_GAP_PX = 48;
+
+function isSingleUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/.test(text.trim());
+}
+
+function resolveSourceType(text: string, uploadedFile: UploadedFile | null): SourceType {
+  if (uploadedFile?.isPdf) return 'pdf';
+  if (uploadedFile) return 'file';
+  const trimmed = text.trim();
+  if (isSingleUrl(trimmed)) return 'link';
+  if (/\[\d{1,2}:\d{2}/.test(trimmed)) return 'youtube';
+  return 'text';
+}
+
+function getInitialTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'dark';
+  const stored = localStorage.getItem('theme');
+  if (stored === 'light' || stored === 'dark') return stored;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function parseTotalMinutes(steps: any[]): number | null {
+  if (!steps?.length) return null;
+  let total = 0;
+  let found = false;
+  for (const step of steps) {
+    const match = String(step.time || '').match(/(\d+)\s*min/i);
+    if (match) {
+      total += parseInt(match[1], 10);
+      found = true;
+    }
+  }
+  return found ? total : null;
+}
+
+function mergeHistory(localEntries: HistoryEntry[], cloudEntries: HistoryEntry[]): HistoryEntry[] {
+  const entries = new Map<string, HistoryEntry>();
+  for (const entry of [...localEntries, ...cloudEntries]) {
+    const existing = entries.get(entry.id);
+    if (!existing || entry.updatedAt > existing.updatedAt) entries.set(entry.id, entry);
+  }
+  return [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 30);
+}
+
 export default function App() {
-  const [inputText, setInputText] = useState("");
-  const [inputType, setInputType] = useState("text"); 
-  const [appState, setAppState] = useState("input"); 
-  const [data, setData] = useState<any>(null);
+  const initialHistory: HistoryStore =
+    typeof window !== 'undefined' ? loadHistory() : { activeId: null, entries: [] };
+  const initialActive = getActiveEntry(initialHistory);
+
+  const [historyStore, setHistoryStore] = useState<HistoryStore>(initialHistory);
+  const [inputText, setInputText] = useState('');
+  const [appState, setAppState] = useState<'input' | 'loading' | 'result'>(
+    initialActive ? 'result' : 'input'
+  );
+  const [data, setData] = useState<any>(initialActive?.session.data ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState(0); 
-  const [isMapOpen, setIsMapOpen] = useState(window.innerWidth >= 1024);
-  const [uploadedFile, setUploadedFile] = useState<{name: string, size: number} | null>(null); 
-  const [theme, setTheme] = useState<'light'|'dark'>('dark');
-  
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(initialActive?.session.currentStep ?? 0);
+  const [isComplete, setIsComplete] = useState(initialActive?.session.isComplete ?? false);
+  const [viewAll, setViewAll] = useState(initialActive?.session.viewAll ?? false);
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= DESKTOP_BREAKPOINT
+  );
+  const [isMapOpen, setIsMapOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= DESKTOP_BREAKPOINT
+  );
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
+  const [modelPreference, setModelPreference] = useState<ModelPreference>(getInitialModelPreference);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [cloudUser, setCloudUser] = useState<{ email?: string | null } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [recentImages, setRecentImages] = useState<string[]>(loadRecentImages);
+  const [isIndexExpanded, setIsIndexExpanded] = useState(true);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showStepFooter, setShowStepFooter] = useState(false);
+  const reduceMotion = useReducedMotion();
+
   const contentRef = useRef<HTMLElement>(null);
+  const stepFooterRef = useRef<HTMLDivElement>(null);
+  const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const attachMenuRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const scrollSpyLockRef = useRef(false);
+  const touchStartRef = useRef<{ x: number; y: number; fromEdge: boolean } | null>(null);
+  const historyStoreRef = useRef(historyStore);
+
+  const SWIPE_THRESHOLD = 60;
+  const SWIPE_EDGE_ZONE = 28;
+
+  const totalSteps = data?.steps?.length ?? 0;
+  const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps ?? []), [data]);
+
+  const progress = useMemo(() => {
+    if (isComplete) return 100;
+    if (viewAll) return scrollProgress;
+    if (!data || totalSteps === 0) return 0;
+    const segments = totalSteps + 1;
+    return (currentStep / (segments - 1)) * 100;
+  }, [isComplete, viewAll, data, totalSteps, currentStep, scrollProgress]);
+
+  const progressLabel = useMemo(() => {
+    if (!data || totalSteps === 0) return '';
+    if (currentStep === 0) return `Introducción · 0 de ${totalSteps} pasos`;
+    if (isComplete) return `Completado · ${totalSteps} de ${totalSteps} pasos`;
+    return `Paso ${currentStep} de ${totalSteps}`;
+  }, [currentStep, data, totalSteps, isComplete]);
+
+  const shouldShowStepFooter =
+    showStepFooter || (!isDesktop && currentStep === 0 && !viewAll && !isComplete);
 
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(isDark ? 'dark' : 'light');
+    historyStoreRef.current = historyStore;
+  }, [historyStore]);
+
+  React.useEffect(() => {
+    if (!supabase) return;
+
+    const hydrateCloudHistory = async (user: { email?: string | null } | null) => {
+      setCloudUser(user);
+      if (!user) return;
+      try {
+        await migrateLocalHistory(historyStoreRef.current);
+        const remoteEntries = await pullCloudHistory();
+        setHistoryStore((previous) => {
+          const merged = { ...previous, entries: mergeHistory(previous.entries, remoteEntries) };
+          saveHistory(merged);
+          return merged;
+        });
+        setSyncError(null);
+      } catch (err) {
+        console.error(err);
+        setSyncError('No se pudo sincronizar el historial. Se conservará en este dispositivo.');
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => hydrateCloudHistory(data.session?.user ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      void hydrateCloudHistory(session?.user ?? null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  React.useEffect(() => {
+    if (!cloudUser) return;
+    const timer = window.setTimeout(() => {
+      void Promise.all(historyStore.entries.map(pushHistoryEntry)).catch((err) => {
+        console.error(err);
+        setSyncError('Los cambios se guardaron localmente; la sincronización se reintentará.');
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [historyStore, cloudUser]);
+
+  const scrollPageToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    window.scrollTo({ top: 0, left: 0, behavior });
+  }, []);
+
+  React.useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [profileMenuOpen]);
+
+  React.useEffect(() => {
+    if (!attachMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
+        setAttachMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [attachMenuOpen]);
+
+  React.useEffect(() => {
+    if (appState !== 'result' || !data || totalSteps === 0 || !viewAll) {
+      if (!viewAll) setScrollProgress(0);
+      return;
     }
+
+    const updateProgress = () => {
+      if (isComplete) {
+        setScrollProgress(100);
+        return;
+      }
+
+      const scrollTop = window.scrollY;
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const scrollRatio = maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, scrollTop / maxScroll));
+      setScrollProgress(scrollRatio * 100);
+    };
+
+    let rafId: number | null = null;
+    const onScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateProgress();
+      });
+    };
+
+    updateProgress();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', updateProgress);
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', updateProgress);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [appState, data, totalSteps, viewAll, isComplete]);
+
+  React.useEffect(() => {
+    if (appState !== 'result') return;
+
+    requestAnimationFrame(() => {
+      if (!viewAll && !isComplete) {
+        contentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      } else {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
+    });
+  }, [appState, historyStore.activeId, viewAll, isComplete]);
+
+  React.useEffect(() => {
+    if (appState === 'result' && data) {
+      setIsIndexExpanded(true);
+    }
+  }, [appState, data, historyStore.activeId]);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      const desktop = window.innerWidth >= DESKTOP_BREAKPOINT;
+      setIsDesktop(desktop);
+      setIsMapOpen(desktop);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setIsMapOpen((open) => !open);
+  }, []);
+
+  const handleSwipeTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (isDesktop) return;
+      const touch = e.touches[0];
+      touchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        fromEdge: touch.clientX <= SWIPE_EDGE_ZONE,
+      };
+    },
+    [isDesktop]
+  );
+
+  const handleSwipeTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (isDesktop || !touchStartRef.current) return;
+
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+
+      if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX) * 0.85) return;
+
+      if (deltaX > 0 && start.fromEdge && !isMapOpen) {
+        setIsMapOpen(true);
+      } else if (deltaX < 0 && isMapOpen) {
+        setIsMapOpen(false);
+      }
+    },
+    [isDesktop, isMapOpen]
+  );
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (!localStorage.getItem('theme')) {
+        setTheme(e.matches ? 'dark' : 'light');
+      }
+    };
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
   }, []);
 
   React.useEffect(() => {
@@ -143,152 +444,881 @@ export default function App() {
     }
   }, [theme]);
 
+  React.useEffect(() => {
+    if (appState !== 'result' || !data || !historyStore.activeId) return;
+
+    setHistoryStore((prev) => {
+      const updated = updateActiveSession(prev, {
+        data,
+        currentStep,
+        isComplete,
+        viewAll,
+      });
+      if (!saveHistory(updated)) {
+        setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
+      }
+      return updated;
+    });
+  }, [appState, data, currentStep, isComplete, viewAll, historyStore.activeId]);
+
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    setTheme((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      localStorage.setItem('theme', next);
+      return next;
+    });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setInputText(event.target?.result as string);
-      setUploadedFile({ name: file.name, size: file.size });
-      setInputType("file"); 
-    };
-    reader.readAsText(file);
-    e.target.value = ''; 
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if (isPdf) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const base64 = dataUrl.split(',')[1];
+        setInputText(file.name);
+        setUploadedFile({
+          name: file.name,
+          size: file.size,
+          isPdf: true,
+          fileData: base64,
+          mimeType: 'application/pdf',
+        });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setInputText(event.target?.result as string);
+        setUploadedFile({ name: file.name, size: file.size });
+      };
+      reader.readAsText(file);
+    }
+    e.target.value = '';
+  };
+
+  const persistRecentImages = (images: string[]) => {
+    const capped = images.slice(0, MAX_RECENT_IMAGES);
+    setRecentImages(capped);
+    let toSave = capped;
+    while (toSave.length > 0) {
+      try {
+        localStorage.setItem(RECENT_IMAGES_KEY, JSON.stringify(toSave));
+        return;
+      } catch {
+        toSave = toSave.slice(0, -1);
+      }
+    }
+    try {
+      localStorage.removeItem(RECENT_IMAGES_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  const addRecentImage = (dataUrl: string) => {
+    persistRecentImages([dataUrl, ...recentImages.filter((url) => url !== dataUrl)]);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    setAttachMenuOpen(false);
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('El archivo seleccionado no es una imagen.');
+      return;
+    }
+
+    try {
+      const { dataUrl, base64, mimeType } = await processImageFile(file);
+      setUploadedFile({
+        name: file.name || 'Imagen',
+        size: file.size,
+        isImage: true,
+        fileData: base64,
+        mimeType,
+        previewUrl: dataUrl,
+      });
+      addRecentImage(dataUrl);
+    } catch {
+      setError('No se pudo procesar la imagen.');
+    }
+  };
+
+  const attachRecentImage = (dataUrl: string) => {
+    const base64 = dataUrl.split(',')[1] ?? '';
+    const mimeMatch = /^data:([^;]+);/.exec(dataUrl);
+    setUploadedFile({
+      name: 'Imagen',
+      size: Math.round(base64.length * 0.75),
+      isImage: true,
+      fileData: base64,
+      mimeType: mimeMatch?.[1] || 'image/jpeg',
+      previewUrl: dataUrl,
+    });
+    addRecentImage(dataUrl);
+    setAttachMenuOpen(false);
   };
 
   const removeFile = () => {
     setUploadedFile(null);
-    setInputText("");
-    setInputType("text");
+    setInputText('');
   };
 
-  const fetchWithRetry = async (url: string, options: any, retries = 5) => {
-    const delays = [1000, 2000, 4000, 8000, 16000];
+  const adjustComposerHeight = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  React.useEffect(() => {
+    if (appState === 'input') {
+      adjustComposerHeight(textareaRef.current);
+    }
+  }, [inputText, uploadedFile, appState]);
+
+  const fetchWithRetry = async (url: string, options: RequestInit, retries = 3) => {
+    const delays = [2000, 5000];
     for (let i = 0; i < retries; i++) {
       try {
         const response = await fetch(url, options);
         if (!response.ok) {
-          let serverErrorMsg = "";
+          let serverErrorMsg = '';
           try {
             const errData = await response.json();
-            if (errData && errData.error) serverErrorMsg = errData.error;
-          } catch (e) {
-             // Ignore JSON parse errors
+            if (errData?.error) serverErrorMsg = errData.error;
+          } catch {
+            // ignore
           }
-          
-          if (serverErrorMsg) {
-             const customError = new Error(serverErrorMsg);
-             (customError as any).status = response.status;
-             throw customError;
-          } else {
-             const customError = new Error(`HTTP error! status: ${response.status}`);
-             (customError as any).status = response.status;
-             throw customError;
-          }
+
+          const customError = new Error(
+            serverErrorMsg || `HTTP error! status: ${response.status}`
+          );
+          (customError as any).status = response.status;
+          throw customError;
         }
         return response;
       } catch (error: any) {
-        if (i === retries - 1 || error.status === 429) throw error;
-        await new Promise(res => setTimeout(res, delays[i]));
+        if (error.name === 'AbortError') throw error;
+        // Only retry transient failures: network errors (no status) or 503
+        // (model overloaded). Retrying 429/4xx/5xx parse errors only burns the
+        // daily free-tier quota without changing the outcome.
+        const isRetryable = error.status === undefined || error.status === 503;
+        if (i === retries - 1 || !isRetryable) throw error;
+        await new Promise((res) => setTimeout(res, delays[i] ?? 5000));
       }
     }
   };
 
-  const cleanTranscript = (text: string) => {
-    return text
+  const cleanTranscript = (text: string) =>
+    text
       .replace(/\[?\d{1,2}:\d{2}(:\d{2})?\]?/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setAppState('input');
   };
 
   const handleTransform = async () => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !uploadedFile) return;
 
-    setAppState("loading");
+    setAppState('loading');
     setError(null);
 
-    const cleanText = cleanTranscript(inputText);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const response = await fetchWithRetry("/api/transform", {
+      let body: Record<string, string>;
+      if (uploadedFile?.isPdf && uploadedFile.fileData) {
+        body = {
+          type: 'pdf',
+          fileData: uploadedFile.fileData,
+          mimeType: uploadedFile.mimeType || 'application/pdf',
+          preferredModel: modelPreference,
+        };
+      } else if (uploadedFile?.isImage && uploadedFile.fileData) {
+        body = {
+          type: 'image',
+          fileData: uploadedFile.fileData,
+          mimeType: uploadedFile.mimeType || 'image/jpeg',
+          preferredModel: modelPreference,
+        };
+        if (inputText.trim()) body.text = inputText.trim();
+      } else if (uploadedFile && inputText.trim()) {
+        body = {
+          text: inputText,
+          type: 'text',
+          preferredModel: modelPreference,
+        };
+      } else {
+        const trimmed = inputText.trim();
+        if (isSingleUrl(trimmed)) {
+          body = {
+            text: trimmed,
+            type: 'link',
+            preferredModel: modelPreference,
+          };
+        } else {
+          body = {
+            text: cleanTranscript(inputText),
+            type: 'text',
+            preferredModel: modelPreference,
+          };
+        }
+      }
+
+      const accessToken = supabase
+        ? (await supabase.auth.getSession()).data.session?.access_token
+        : undefined;
+      const response = (await fetchWithRetry('/api/transform', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: inputType === 'link' ? inputText : cleanText, type: inputType })
-      }) as Response;
-      
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })) as Response;
+
       const parsedData = await response.json();
-      
       if (parsedData.error) throw new Error(parsedData.error);
-      
+
+      const session = {
+        data: parsedData,
+        currentStep: 0,
+        isComplete: false,
+        viewAll: false,
+      };
+      const sourceType = resolveSourceType(inputText, uploadedFile);
+
+      setHistoryStore((prev) => {
+        const updated = createEntry(prev, session, sourceType);
+        if (!saveHistory(updated)) {
+          setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
+        }
+        return updated;
+      });
+
       setData(parsedData);
-      setAppState("result");
+      setAppState('result');
       setCurrentStep(0);
-      setIsMapOpen(window.innerWidth >= 1024);
-      
+      setIsComplete(false);
+      setViewAll(false);
+      setIsMapOpen(isDesktop);
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setAppState('input');
+        return;
+      }
       console.error(err);
-      setError(err.message || "No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.");
-      setAppState("input");
+      setError(
+        err.message ||
+          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.'
+      );
+      setAppState('input');
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
-  const progress = useMemo(() => {
-    if (!data) return 0;
-    const totalSteps = data.steps.length + 1;
-    return (currentStep / (totalSteps - 1)) * 100;
-  }, [currentStep, data]);
-
-  const resetApp = () => {
-    setInputText("");
+  const handleNewMap = () => {
+    setHistoryStore((prev) => {
+      const updated = setActiveId(prev, null);
+      saveHistory(updated);
+      return updated;
+    });
+    setInputText('');
     setUploadedFile(null);
     setData(null);
-    setAppState("input");
-    setInputType("text");
+    setAppState('input');
+    setCurrentStep(0);
+    setIsComplete(false);
+    setViewAll(false);
+    if (!isDesktop) setIsMapOpen(false);
   };
 
-  const handleStepClick = (idx: number) => {
-    setCurrentStep(idx);
-    if (window.innerWidth < 1024) setIsMapOpen(false);
-    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  const resetApp = handleNewMap;
+
+  const handleSelectHistory = (id: string) => {
+    const entry = historyStore.entries.find((e) => e.id === id);
+    if (!entry) return;
+
+    const { session } = entry;
+    setHistoryStore((prev) => {
+      const updated = setActiveId(prev, id);
+      saveHistory(updated);
+      return updated;
+    });
+    setData(session.data);
+    setCurrentStep(session.currentStep);
+    setIsComplete(session.isComplete ?? false);
+    setViewAll(session.viewAll ?? false);
+    setAppState('result');
+    setError(null);
+    if (!isDesktop) setIsMapOpen(false);
+    scrollPageToTop();
   };
+
+  const handleDeleteHistory = (id: string) => {
+    const wasActive = historyStore.activeId === id;
+
+    setHistoryStore((prev) => {
+      const updated = deleteEntry(prev, id);
+      saveHistory(updated);
+      return updated;
+    });
+    if (cloudUser) void deleteCloudHistoryEntry(id).catch(() => setSyncError('No se pudo eliminar el mapa de la nube.'));
+
+    if (wasActive) {
+      setData(null);
+      setAppState('input');
+      setCurrentStep(0);
+      setIsComplete(false);
+      setViewAll(false);
+    }
+  };
+
+  const handleTogglePinHistory = (id: string) => {
+    setHistoryStore((prev) => {
+      const updated = togglePinEntry(prev, id);
+      saveHistory(updated);
+      return updated;
+    });
+  };
+
+  const scrollToSection = useCallback((idx: number) => {
+    const id = idx === 0 ? 'section-resumen' : `section-step-${idx}`;
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    scrollSpyLockRef.current = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => {
+      scrollSpyLockRef.current = false;
+    }, 700);
+  }, []);
+
+  const handleStepClick = useCallback(
+    (idx: number) => {
+      setIsComplete(false);
+      setShowStepFooter(false);
+      setCurrentStep(idx);
+      if (!isDesktop) setIsMapOpen(false);
+
+      if (viewAll) {
+        scrollToSection(idx);
+      }
+    },
+    [isDesktop, viewAll, scrollToSection]
+  );
+
+  React.useLayoutEffect(() => {
+    if (appState !== 'result' || viewAll || isComplete) {
+      setShowStepFooter(false);
+      return;
+    }
+
+    setShowStepFooter(false);
+
+    const scrollRoot = contentRef.current;
+    if (!scrollRoot) return;
+
+    const previousScrollBehavior = scrollRoot.style.scrollBehavior;
+    scrollRoot.style.scrollBehavior = 'auto';
+    scrollRoot.scrollTop = 0;
+    scrollRoot.style.scrollBehavior = previousScrollBehavior;
+
+    const BOTTOM_THRESHOLD = 4;
+    let rafId: number | null = null;
+
+    const evaluate = () => {
+      if (!scrollRoot) return;
+      const { scrollTop, scrollHeight, clientHeight } = scrollRoot;
+      const atBottom = scrollTop + clientHeight >= scrollHeight - BOTTOM_THRESHOLD;
+      setShowStepFooter(atBottom);
+    };
+
+    let initRafId = requestAnimationFrame(() => {
+      initRafId = requestAnimationFrame(() => {
+        evaluate();
+      });
+    });
+
+    const onScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        evaluate();
+      });
+    };
+
+    scrollRoot.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', evaluate);
+
+    const resizeObserver = new ResizeObserver(evaluate);
+    resizeObserver.observe(scrollRoot);
+    if (scrollRoot.firstElementChild) {
+      resizeObserver.observe(scrollRoot.firstElementChild);
+    }
+
+    return () => {
+      scrollRoot.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', evaluate);
+      resizeObserver.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      cancelAnimationFrame(initRafId);
+    };
+  }, [currentStep, appState, viewAll, isComplete, data]);
+
+  React.useLayoutEffect(() => {
+    if (appState !== 'result' || viewAll || isComplete) {
+      setContentBottomPad(PAGE_BOTTOM_PAD_PX);
+      return;
+    }
+
+    const footerEl = stepFooterRef.current;
+    if (!footerEl) return;
+
+    const updatePadding = () => {
+      setContentBottomPad(footerEl.offsetHeight + CONTENT_FOOTER_GAP_PX);
+    };
+
+    updatePadding();
+
+    const resizeObserver = new ResizeObserver(updatePadding);
+    resizeObserver.observe(footerEl);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [currentStep, appState, viewAll, isComplete]);
+
+  React.useEffect(() => {
+    if (appState !== 'result' || !viewAll || isComplete || !data?.steps) return;
+
+    const sectionIds = [
+      'section-resumen',
+      ...data.steps.map((_: any, i: number) => `section-step-${i + 1}`),
+    ];
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (scrollSpyLockRef.current) return;
+
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+
+        const topmost = visible.reduce((best, entry) =>
+          entry.boundingClientRect.top < best.boundingClientRect.top ? entry : best
+        );
+
+        const step = topmost.target.getAttribute('data-step');
+        if (step !== null) {
+          setCurrentStep(parseInt(step, 10));
+        }
+      },
+      {
+        root: null,
+        threshold: [0, 0.25, 0.5],
+        rootMargin: '-15% 0px -50% 0px',
+      }
+    );
+
+    sectionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [appState, viewAll, isComplete, data]);
+
+  React.useEffect(() => {
+    if (appState !== 'result' || isComplete || viewAll) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'ArrowRight' && currentStep < totalSteps) {
+        e.preventDefault();
+        handleStepClick(currentStep + 1);
+      } else if (e.key === 'ArrowLeft' && currentStep > 0) {
+        e.preventDefault();
+        handleStepClick(currentStep - 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [appState, currentStep, totalSteps, isComplete, viewAll, handleStepClick]);
+
+  const toggleViewMode = () => {
+    setViewAll((v) => !v);
+    setIsComplete(false);
+    scrollPageToTop();
+    if (!isDesktop) setIsMapOpen(false);
+  };
+
+  const renderViewModeToggle = (className = '') => (
+    <button
+      onClick={toggleViewMode}
+      className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold border transition-colors ${viewAll ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/20' : 'border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/5'} ${className}`}
+    >
+      {viewAll ? <List className="w-4 h-4 shrink-0" /> : <Layers className="w-4 h-4 shrink-0" />}
+      {viewAll ? 'Paso a paso' : 'Ver todo'}
+    </button>
+  );
+
+  const renderProfileMenu = (align: 'up' | 'right') => {
+    if (!profileMenuOpen) return null;
+
+    const positionClass =
+      align === 'up' ? 'bottom-full left-0 mb-2' : 'left-full bottom-0 ml-2';
+
+    return (
+      <div
+        className={`absolute z-[60] w-72 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden ${positionClass}`}
+        role="menu"
+      >
+        <div className="px-3 py-2.5 border-b border-neutral-200 dark:border-white/10">
+          <p className="text-[10px] font-bold tracking-widest uppercase text-neutral-400">Modelo</p>
+        </div>
+        <div className="py-1 max-h-52 overflow-y-auto">
+          {MODEL_OPTIONS.map((option) => {
+            const isActive = modelPreference === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isActive}
+                disabled={appState === 'loading'}
+                onClick={() => {
+                  setModelPreference(option.id);
+                  saveModelPreference(option.id);
+                }}
+                className={`w-full text-left px-3 py-2.5 flex items-start gap-2 transition-colors disabled:opacity-50 ${
+                  isActive
+                    ? 'bg-indigo-50 dark:bg-indigo-500/10'
+                    : 'hover:bg-neutral-50 dark:hover:bg-white/5'
+                }`}
+              >
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    {option.hint}
+                  </span>
+                </span>
+                {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="border-t border-neutral-200 dark:border-white/10 py-1">
+          {isCloudSyncConfigured && !cloudUser && (
+            <>
+              <p className="px-3 pt-2 text-[10px] font-bold tracking-widest uppercase text-neutral-400">Sincronización</p>
+              <button type="button" role="menuitem" onClick={() => void signInWith('google')} className="w-full text-left px-3 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+                Continuar con Google
+              </button>
+              <button type="button" role="menuitem" onClick={() => void signInWith('apple')} className="w-full text-left px-3 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+                Continuar con Apple
+              </button>
+            </>
+          )}
+          {cloudUser && (
+            <div className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 truncate">
+              Sincronizado como {cloudUser.email ?? 'tu cuenta'}
+            </div>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              toggleTheme();
+              setProfileMenuOpen(false);
+            }}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+          >
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-400 cursor-not-allowed"
+          >
+            <Settings className="w-4 h-4" />
+            Ajustes
+          </button>
+          {cloudUser && <button
+            type="button"
+            role="menuitem"
+            onClick={() => void signOut()}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Cerrar sesión
+          </button>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderProfileTrigger = (variant: 'compact' | 'expanded') => (
+    <div className="relative" ref={profileMenuRef}>
+      <button
+        type="button"
+        onClick={() => setProfileMenuOpen((open) => !open)}
+        className={`rounded-xl transition-colors hover:bg-neutral-200/50 dark:hover:bg-white/5 ${
+          variant === 'compact' ? 'p-1' : 'p-1'
+        }`}
+        aria-expanded={profileMenuOpen}
+        aria-haspopup="menu"
+        title="Cuenta y ajustes"
+        aria-label="Cuenta y ajustes"
+      >
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm">
+          <span className="text-xs font-bold text-white leading-none">M</span>
+        </div>
+      </button>
+      {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}
+    </div>
+  );
+
+  const renderCollapsedRail = () => (
+    <div className="hidden lg:flex flex-col h-full w-14 shrink-0 items-center py-5 gap-1">
+      <button
+        onClick={toggleSidebar}
+        className="p-2 rounded-xl text-[#1A1A1A] dark:text-[#EDEDED] hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        title="Abrir panel"
+        aria-label="Abrir panel lateral"
+      >
+        <AppIcon className="w-7 h-7" />
+      </button>
+      <button
+        onClick={handleNewMap}
+        className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        title="Nuevo mapa"
+        aria-label="Nuevo mapa"
+      >
+        <SquarePen className="w-5 h-5" />
+      </button>
+      <button
+        onClick={toggleSidebar}
+        className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        title="Historial"
+        aria-label="Abrir historial"
+      >
+        <History className="w-5 h-5" />
+      </button>
+      <div className="mt-auto pb-2">{renderProfileTrigger('compact')}</div>
+    </div>
+  );
+
+  const renderSidebarBrand = () => (
+    <div className="flex items-center justify-between gap-2 mb-6">
+      <div className="flex items-center gap-2">
+        <AppIcon className="w-8 h-8 shrink-0 text-[#1A1A1A] dark:text-[#EDEDED]" />
+        <span className="text-xl font-semibold text-[#1A1A1A] dark:text-[#EDEDED] tracking-tight">
+          Nucleo
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={toggleSidebar}
+        className="inline-flex p-2 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        title="Cerrar panel lateral"
+        aria-label="Cerrar panel lateral"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  const renderSidebar = () => (
+    <aside
+      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-[#1C1C1C] border-r border-neutral-200 dark:border-white/5 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
+        isMapOpen
+          ? 'translate-x-0 w-full lg:w-72 h-dvh flex flex-col overflow-hidden'
+          : '-translate-x-full lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
+      }`}
+      aria-hidden={!isMapOpen && !isDesktop}
+    >
+      {isMapOpen ? (
+      <div className="flex flex-col h-full min-h-0 w-full lg:w-72">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-6 lg:pt-8">
+          {renderSidebarBrand()}
+
+          {appState === 'result' && data && (
+            <div className="mb-6">
+              <button
+                type="button"
+                onClick={() => setIsIndexExpanded((prev) => !prev)}
+                className="w-full flex items-center gap-2 mb-4 text-left rounded-lg -mx-2 px-2 py-1 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+                aria-expanded={isIndexExpanded}
+              >
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${isIndexExpanded ? '' : '-rotate-90'}`}
+                />
+                <span className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-400">
+                  Índice
+                </span>
+              </button>
+
+              {isIndexExpanded && (
+                <>
+              <nav className="flex flex-col gap-1">
+                <button
+                  onClick={() => handleStepClick(0)}
+                  className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${currentStep === 0 && !isComplete ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                >
+                  <span>Resumen</span>
+                </button>
+
+                <div className="w-px h-6 bg-neutral-200 dark:bg-white/5 ml-8 my-1" />
+
+                {data?.steps?.map((step: any, idx: number) => {
+                  const stepNum = idx + 1;
+                  const isActive = currentStep === stepNum && !isComplete;
+                  const isPast = currentStep > stepNum || isComplete;
+                  return (
+                    <button
+                      key={step.id}
+                      onClick={() => handleStepClick(stepNum)}
+                      className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                    >
+                      <span className="flex items-center gap-3 min-w-0 lg:flex-1 lg:pr-6">
+                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 dark:bg-white/10 flex items-center justify-center text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                          {stepNum}
+                        </span>
+                        <span className="truncate">{step.shortNav}</span>
+                      </span>
+                      <CheckCircle2
+                        className={`w-4 h-4 shrink-0 ${
+                          isPast ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-600'
+                        }`}
+                      />
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {!isComplete && renderViewModeToggle('mt-4')}
+                </>
+              )}
+            </div>
+          )}
+
+          {storageError && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{storageError}</p>
+          )}
+          {syncError && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{syncError}</p>
+          )}
+
+          <HistoryPanel
+            entries={historyStore.entries}
+            activeId={historyStore.activeId}
+            disabled={appState === 'loading'}
+            onSelect={handleSelectHistory}
+            onDelete={handleDeleteHistory}
+            onTogglePin={handleTogglePinHistory}
+          />
+        </div>
+
+        <div className="shrink-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 bg-neutral-50 dark:bg-[#1C1C1C]">
+          <div className="flex items-center justify-between gap-3">
+            {renderProfileTrigger('expanded')}
+            <button
+              onClick={handleNewMap}
+              className="group relative overflow-hidden flex items-center gap-2 py-2 px-4 rounded-full font-semibold text-[#1A1A1A] dark:text-[#EDEDED] bg-white/50 dark:bg-white/10 backdrop-blur-xl backdrop-saturate-150 border border-white/40 dark:border-white/15 shadow-[0_4px_16px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:bg-white/70 dark:hover:bg-white/15 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.7)] active:scale-[0.97] shrink-0"
+              title="Nuevo mapa"
+              aria-label="Nuevo mapa"
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/50 to-transparent opacity-70 dark:from-white/20"
+              />
+              <SquarePen className="relative w-4 h-4" />
+              <span className="relative">Nuevo mapa</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      ) : (
+        renderCollapsedRail()
+      )}
+    </aside>
+  );
 
   const renderContentBlock = (block: any, idx: number) => {
     const type = String(block.type || 'prose').toLowerCase();
     const textContent = block.text || block.description || block.content || '';
 
     switch (type) {
-      case 'callout':
+      case 'callout': {
         const kind = String(block.kind || 'info').toLowerCase();
         const colors: Record<string, string> = {
-          action: 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-900 dark:text-emerald-100',
+          action:
+            'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-900 dark:text-emerald-100',
           info: 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 text-blue-900 dark:text-blue-100',
-          alert: 'border-amber-500 bg-amber-50/50 dark:bg-amber-900/10 text-amber-900 dark:text-amber-100'
+          alert:
+            'border-amber-500 bg-amber-50/50 dark:bg-amber-900/10 text-amber-900 dark:text-amber-100',
         };
-        const Icons: Record<string, any> = { action: CheckCircle2, info: Info, alert: AlertTriangle };
+        const Icons: Record<string, any> = {
+          action: CheckCircle2,
+          info: Info,
+          alert: AlertTriangle,
+        };
         const Icon = Icons[kind] || Info;
         return (
-          <div key={idx} className={`pl-5 py-4 border-l-4 my-8 flex gap-4 items-start ${colors[kind] || colors.info}`}>
+          <div
+            key={idx}
+            className={`pl-5 py-4 border-l-4 my-8 flex gap-4 items-start content-prose ${colors[kind] || colors.info}`}
+          >
             <Icon className="w-6 h-6 shrink-0 mt-0.5 opacity-80" />
-            <p className="font-medium text-lg m-0 leading-relaxed">{textContent || "Presta atención a este punto clave."}</p>
+            <p className="font-medium text-lg m-0 leading-relaxed text-pretty">
+              {textContent || 'Presta atención a este punto clave.'}
+            </p>
           </div>
         );
+      }
       case 'list':
         return (
-          <div key={idx} className="my-10 max-w-[70ch]">
-            {textContent && <p className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.65] mb-8">{textContent}</p>}
-            {block.items && block.items.length > 0 && (
+          <div key={idx} className="my-10 content-prose">
+            {textContent && (
+              <p className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.65] mb-8 text-pretty">
+                {textContent}
+              </p>
+            )}
+            {block.items?.length > 0 && (
               <ul className="space-y-6">
                 {block.items.map((item: any, i: number) => (
                   <li key={i} className="flex gap-4 items-start">
                     <div className="w-2 h-2 rounded-full bg-indigo-500 mt-2.5 shrink-0" />
-                    <div className="text-lg sm:text-xl leading-[1.65]">
-                      <strong className="text-[#1A1A1A] dark:text-[#EDEDED] font-bold">{item.strong}</strong>
-                      {item.span && <span className="text-neutral-700 dark:text-neutral-300 ml-2">{item.span}</span>}
+                    <div className="text-lg sm:text-xl leading-[1.65] text-pretty">
+                      <strong className="text-[#1A1A1A] dark:text-[#EDEDED] font-bold">
+                        {item.strong}
+                      </strong>
+                      {item.span && (
+                        <span className="text-neutral-700 dark:text-neutral-300 ml-2">
+                          {item.span}
+                        </span>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -296,362 +1326,578 @@ export default function App() {
             )}
           </div>
         );
-      case 'prose':
       default:
-        if (!textContent.trim()) return null; 
-        return <p key={idx} className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.65] my-8 max-w-[70ch]">{textContent}</p>;
+        if (!textContent.trim()) return null;
+        return (
+          <p
+            key={idx}
+            className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.65] my-8 content-prose text-pretty"
+          >
+            {textContent}
+          </p>
+        );
     }
   };
 
-  if (appState === "input") {
-    return (
-      <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#121212] flex flex-col items-center justify-center p-4 sm:p-8 transition-colors duration-300">
-        <button 
-          onClick={toggleTheme}
-          className="fixed top-6 right-6 z-[100] p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors bg-white/50 dark:bg-transparent rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-          title="Alternar tema"
-        >
-          {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-        </button>
-        <div className="w-full max-w-3xl space-y-8">
-          
-          <div className="text-center space-y-3">
-            <div className="inline-flex items-center justify-center p-3 bg-neutral-100 dark:bg-white/5 rounded-2xl mb-2 text-[#1A1A1A] dark:text-[#EDEDED]">
-              <Brain className="w-8 h-8" />
+  const renderResumen = () => (
+    <div
+      id="section-resumen"
+      data-step="0"
+      className={`animate-slide-up content-column scroll-mt-28 ${viewAll ? 'mb-20 pb-12 border-b border-neutral-200 dark:border-white/5' : ''}`}
+    >
+      <div className="mb-16">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="flex items-center gap-2">
+            <AppIcon className="w-5 h-5 text-[#1A1A1A] dark:text-[#EDEDED]" />
+            <span className="text-sm font-bold tracking-widest uppercase text-[#1A1A1A] dark:text-[#EDEDED]">
+              El Nucleo
+            </span>
+          </div>
+          {totalMinutes !== null && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold border border-indigo-200 dark:border-indigo-500/20">
+              <Clock className="w-4 h-4" />
+              Lectura total: ~{totalMinutes} min
+            </span>
+          )}
+        </div>
+        <h2 className="heading-core text-[#1A1A1A] dark:text-[#EDEDED] mb-6">
+          {data?.coreIdea}
+        </h2>
+        <p className="text-xl sm:text-2xl leading-[1.65] text-neutral-700 dark:text-neutral-400 content-prose text-pretty">
+          {data?.coreSupport}
+        </p>
+      </div>
+
+      <div className={`border-t border-neutral-200 dark:border-white/5 pt-12${viewAll ? ' pb-8' : ''}`}>
+        <h3 className="text-xs font-bold tracking-widest uppercase text-neutral-400 mb-10">
+          Desglose Rápido (TL;DR)
+        </h3>
+        <div className="grid gap-10">
+          {data?.tldr?.map((item: any, i: number) => (
+            <div key={i} className="flex gap-6 items-start group">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-neutral-200 dark:border-white/10 flex items-center justify-center text-sm font-bold text-neutral-400 group-hover:border-indigo-500 group-hover:text-indigo-500 transition-colors">
+                {i + 1}
+              </div>
+              <div className="min-w-0 flex-1">
+                <strong className="block text-[#1A1A1A] dark:text-[#EDEDED] text-lg sm:text-xl font-bold mb-3">
+                  {item.title}
+                </strong>
+                <p className="text-neutral-700 dark:text-neutral-300 text-base sm:text-lg leading-[1.65] content-prose text-pretty">
+                  {item.desc}
+                </p>
+              </div>
             </div>
-            <h1 className="text-5xl sm:text-6xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
-              TDAH Optimizer
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderStep = (stepIndex: number) => {
+    const step = data?.steps[stepIndex - 1];
+    if (!step) return null;
+
+    return (
+      <div
+        id={`section-step-${stepIndex}`}
+        data-step={stepIndex}
+        key={step.id || stepIndex}
+        className={
+          viewAll
+            ? 'mb-20 pb-12 border-b border-neutral-200 dark:border-white/5 last:mb-0 last:pb-0 last:border-0 scroll-mt-28 content-column'
+            : 'animate-slide-right content-column'
+        }
+      >
+        <div className={viewAll ? 'mb-12' : undefined}>
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <span className="text-indigo-600 dark:text-indigo-400 font-bold tracking-widest uppercase text-sm">
+              Paso {stepIndex} de {totalSteps}
+            </span>
+            {step.time && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
+                <span className="text-neutral-500 dark:text-neutral-400 font-medium text-sm">
+                  {step.time}
+                </span>
+              </>
+            )}
+          </div>
+
+          <h2 className="heading-step text-[#1A1A1A] dark:text-[#EDEDED] mb-12">
+            {step.title}
+          </h2>
+
+          <div className="mt-8">
+            {step.content?.map((block: any, idx: number) => renderContentBlock(block, idx))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStepNavFooter = () => {
+    if (viewAll || isComplete) return null;
+
+    if (currentStep === 0) {
+      return (
+        <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto">
+            <button
+              onClick={() => handleStepClick(1)}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
+            >
+              Empezar a leer <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const stepIndex = currentStep;
+
+    return (
+      <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="max-w-3xl mx-auto flex gap-4">
+          <button
+            onClick={() => handleStepClick(stepIndex - 1)}
+            className="flex-1 bg-transparent text-neutral-700 dark:text-neutral-300 p-4 rounded-xl font-bold border border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors flex justify-center"
+          >
+            Atrás
+          </button>
+
+          {stepIndex < totalSteps ? (
+            <button
+              onClick={() => handleStepClick(stepIndex + 1)}
+              className="flex-[2] bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
+            >
+              Siguiente <ArrowRight className="w-5 h-5" />
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setIsComplete(true);
+                scrollPageToTop();
+              }}
+              className="flex-[2] bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
+            >
+              <Check className="w-6 h-6" /> Finalizar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCompletion = () => (
+    <div className="animate-celebrate content-column text-center py-16">
+      <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/15 mb-8">
+        <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+      </div>
+      <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED] mb-4">
+        ¡Lo lograste!
+      </h2>
+      <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-2 content-prose mx-auto text-pretty">
+        Has completado los {totalSteps} pasos de este mapa de acción.
+      </p>
+      {totalMinutes !== null && (
+        <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-10">
+          Tiempo estimado de lectura: ~{totalMinutes} min
+        </p>
+      )}
+      <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
+        <button
+          onClick={() => {
+            setIsComplete(false);
+            handleStepClick(0);
+          }}
+          className="px-8 py-4 rounded-xl font-bold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+        >
+          Repasar desde el inicio
+        </button>
+        <button
+          onClick={resetApp}
+          className="px-8 py-4 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+        >
+          <SquarePen className="w-5 h-5" /> Nuevo mapa
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderProgressBar = (sticky = false) => (
+    <div
+      className={`shrink-0 bg-neutral-50 dark:bg-[#1C1C1C] border-b border-neutral-200 dark:border-white/5${sticky ? ' sticky top-0 z-40' : ''}`}
+      role="region"
+      aria-label="Progreso de lectura"
+    >
+      <div className="flex items-center justify-between gap-3 py-2.5 px-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="inline-flex lg:hidden -ml-1 shrink-0 p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+            title="Abrir navegación"
+            aria-label="Abrir navegación"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="truncate text-xs sm:text-sm font-bold text-neutral-700 dark:text-neutral-200">
+            {progressLabel}
+          </span>
+        </div>
+        <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-xs sm:text-sm font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300" aria-live="polite">
+          {Math.round(progress)}%
+        </span>
+      </div>
+      <div className="h-2 bg-neutral-200 dark:bg-neutral-800">
+        <div
+          className={`h-full bg-indigo-600 dark:bg-indigo-500 rounded-r-full${viewAll ? '' : ' transition-all duration-500 ease-out'}`}
+          style={{ width: `${progress}%` }}
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+      </div>
+    </div>
+  );
+
+  const renderInputContent = () => {
+    const canSubmit = Boolean(inputText.trim() || uploadedFile);
+    const composerPlaceholder = uploadedFile?.isImage
+      ? 'Añade una indicación (opcional)…'
+      : uploadedFile
+        ? 'Archivo adjunto listo para transformar'
+        : 'Pega texto, un enlace o una transcripción…';
+    const hideTextInput = Boolean(uploadedFile?.isPdf);
+
+    return (
+      <div className="relative h-dvh overflow-hidden flex flex-col">
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 inline-flex lg:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+          title="Abrir navegación"
+          aria-label="Abrir navegación"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
+          <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
+            <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
+              <AppIcon
+                className={`w-10 h-10 sm:w-12 sm:h-12${reduceMotion ? '' : ' animate-atom-rotate'}`}
+              />
+            </div>
+            <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
+              Qué me cuentas?
             </h1>
-            <p className=" text-xl text-neutral-600 dark:text-neutral-400 max-w-lg mx-auto leading-relaxed">
-              Convierte <strong className="text-[#1A1A1A] dark:text-[#EDEDED]">caos en mapas de acción</strong>. Directo al punto, <strong className="text-[#1A1A1A] dark:text-[#EDEDED]">sin distracciones</strong>.
+            <p className="text-sm sm:text-lg text-neutral-600 dark:text-neutral-400 leading-relaxed">
+              Convierte{' '}
+              <strong className="text-[#1A1A1A] dark:text-[#EDEDED]">
+                caos en mapas de acción
+              </strong>
+              . Directo al punto.
             </p>
           </div>
 
-          <div className="bg-neutral-50 dark:bg-[#1C1C1C] p-2 rounded-3xl border border-neutral-200 dark:border-transparent transition-colors">
-            
-            <div className="flex flex-wrap sm:flex-nowrap gap-2 p-2 mb-2 border-b border-neutral-200 dark:border-transparent">
-              <button 
-                onClick={() => { setInputType('text'); if(uploadedFile) removeFile(); }} 
-                className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl font-bold transition-all duration-200 text-sm sm:text-base ${inputType === 'text' ? 'bg-white text-indigo-600 dark:bg-[#2A2A2A] dark:text-indigo-500 shadow-sm border border-neutral-200 dark:border-white/5' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-[#1C1C1C]'}`}
-              >
-                <FileText className="w-4 h-4 sm:w-5 sm:h-5" /> Texto
-              </button>
-              <button 
-                onClick={() => { setInputType('link'); if(uploadedFile) removeFile(); }} 
-                className={`flex-1 min-w-[80px] flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl font-bold transition-all duration-200 text-sm sm:text-base ${inputType === 'link' ? 'bg-white text-indigo-600 dark:bg-[#1C1C1C] dark:text-indigo-400 shadow-sm' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-[#1C1C1C]'}`}
-              >
-                <Link2 className="w-4 h-4 sm:w-5 sm:h-5" /> Enlace
-              </button>
-              <button 
-                onClick={() => { setInputType('youtube'); if(uploadedFile) removeFile(); }} 
-                className={`flex-1 min-w-[120px] flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl font-bold transition-all duration-200 text-sm sm:text-base ${inputType === 'youtube' ? 'bg-white text-indigo-600 dark:bg-[#2A2A2A] dark:text-indigo-500 shadow-sm border border-neutral-200 dark:border-white/5' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-[#1C1C1C]'}`}
-              >
-                <Youtube className="w-4 h-4 sm:w-5 sm:h-5" /> 
-                <span className="truncate">Transcripción</span>
-                <div className="relative flex items-center group/tooltip">
-                  <Info className="w-4 h-4 opacity-60 hover:opacity-100 transition-opacity" />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 p-3 bg-[#1A1A1A] dark:bg-[#F5F5F5] text-[#EDEDED] dark:text-[#1A1A1A] text-xs font-medium rounded-xl shadow-xl opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all z-50 pointer-events-none text-center leading-relaxed normal-case tracking-normal">
-                    Ve a YouTube {">"} Clic en "...más" {">"} Mostrar transcripción {">"} Cópiala y pégala abajo.<br/><strong className="text-[#EDEDED] dark:text-[#1A1A1A] font-bold mt-1 block">Los tiempos [00:00] se limpiarán solos.</strong>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-neutral-800 dark:border-t-neutral-200"></div>
-                  </div>
-                </div>
-              </button>
-              <div className="flex-1 min-w-[80px] relative group">
-                <input 
-                  type="file" 
-                  accept=".txt,.md,.csv" 
-                  onChange={handleFileUpload} 
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                  title="Subir archivo de texto" 
-                />
-                <button className={`w-full h-full flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl font-bold transition-all duration-200 text-sm sm:text-base ${inputType === 'file' ? 'bg-white text-indigo-600 dark:bg-[#1C1C1C] dark:text-indigo-400 shadow-sm' : 'text-neutral-500 group-hover:bg-neutral-100 dark:group-hover:bg-[#1C1C1C]'}`}>
-                  <Upload className="w-4 h-4 sm:w-5 sm:h-5" /> Archivo
-                </button>
-              </div>
-            </div>
-
-            {inputType === 'file' && uploadedFile ? (
-              <div className="w-full h-64 p-6 flex flex-col items-center justify-center gap-4 bg-white/50 dark:bg-[#1C1C1C] rounded-xl border-2 border-dashed border-neutral-300 dark:border-white/10">
-                <div className="w-20 h-20 bg-neutral-100 dark:bg-white/5 text-[#1A1A1A] dark:text-[#EDEDED] rounded-3xl flex items-center justify-center relative">
-                  <File className="w-10 h-10" />
-                  <div className="absolute -bottom-2 -right-2 bg-indigo-600 dark:bg-indigo-500 text-white p-1.5 rounded-full border-4 border-neutral-50 dark:border-neutral-900">
-                    <Check className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-center">
-                  <h3 className="text-lg font-bold text-neutral-800 dark:text-neutral-200 truncate max-w-[250px]">
-                    {uploadedFile.name}
-                  </h3>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                    {(uploadedFile.size / 1024).toFixed(1)} KB • Listo para procesar
-                  </p>
-                </div>
-                <button 
-                  onClick={removeFile}
-                  className="mt-2 text-sm font-semibold text-neutral-500 hover:text-[#1A1A1A] dark:hover:text-[#EDEDED] hover:bg-neutral-100 dark:hover:bg-white/5 px-4 py-2 rounded-lg transition-colors flex items-center gap-1"
-                >
-                  <X className="w-4 h-4" /> Quitar archivo
-                </button>
-              </div>
-            ) : inputType === 'link' ? (
-              <div className="w-full h-64 p-6 flex flex-col items-center justify-center gap-6">
-                <div className="w-20 h-20 bg-neutral-100 dark:bg-white/5 text-[#1A1A1A] dark:text-[#EDEDED] rounded-3xl flex items-center justify-center">
-                  <Link2 className="w-10 h-10" />
-                </div>
-                <div className="w-full max-w-lg relative">
-                  <input
-                    type="url"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder="https://ejemplo.com/articulo..."
-                    className="w-full p-4 pl-12 text-center bg-white dark:bg-[#1C1C1C] border border-neutral-200 dark:border-white\/10 rounded-2xl outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all text-neutral-800 dark:text-neutral-200 font-medium"
-                  />
-                  <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-400" />
-                </div>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center max-w-sm font-medium">
-                  Pega un enlace web. La IA buscará la página y extraerá el contenido.
-                </p>
-              </div>
-            ) : (
-              <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder={inputType === 'youtube' ? "Pega aquí todo el bloque de texto de la transcripción..." : "Pega tu muro de texto denso aquí..."}
-                className="w-full h-64 p-5 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-lg leading-relaxed rounded-xl focus:ring-2 focus:ring-indigo-500/20"
-              />
-            )}
-
-            <div className="p-2 flex justify-between items-center bg-white dark:bg-neutral-900 rounded-2xl mt-2 border border-neutral-200 dark:border-transparent">
-              <span className="text-xs font-semibold text-neutral-500 px-3 uppercase tracking-wider">
-                {uploadedFile ? "1 Archivo cargado" : inputType === 'link' ? (inputText.length > 5 ? "Enlace listo" : "Esperando enlace") : `${inputText.length} caracteres`}
-              </span>
-              <button
-                onClick={handleTransform}
-                disabled={!inputText.trim() && !uploadedFile}
-                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95"
-              >
-                <Wand2 className="w-5 h-5" />
-                Transformar
-              </button>
-            </div>
-          </div>
-          
           {error && (
-            <div className="p-4 bg-neutral-50 dark:bg-neutral-900/50 text-[#1A1A1A] dark:text-[#EDEDED] rounded-2xl border border-neutral-200 dark:border-white/5 flex items-center gap-3">
+            <div className="mt-6 w-full max-w-3xl p-4 bg-neutral-50 dark:bg-neutral-900/50 text-[#1A1A1A] dark:text-[#EDEDED] rounded-2xl border border-neutral-200 dark:border-white/5 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 shrink-0" />
-              <p className="font-medium">{error}</p>
+              <p className="font-medium text-sm">{error}</p>
             </div>
           )}
         </div>
-      </div>
-    );
-  }
 
-  if (appState === "loading") {
-    return (
-      <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#121212] flex flex-col items-center justify-center p-8 text-center space-y-6 transition-colors duration-300">
-        <div className="relative">
-          <div className="w-20 h-20 border-4 border-neutral-200 dark:border-[#1C1C1C] rounded-full animate-pulse"></div>
-          <div className="w-20 h-20 border-4 border-[#1A1A1A] dark:border-[#EDEDED] rounded-full border-t-transparent animate-spin absolute inset-0"></div>
-          <Sparkles className="absolute inset-0 m-auto w-8 h-8 text-[#1A1A1A] dark:text-[#EDEDED] animate-bounce" />
-        </div>
-        <div className="space-y-4 max-w-sm">
-          <h2 className="text-3xl font-bold tracking-tight text-[#1A1A1A] dark:text-[#EDEDED]">Destilando conocimiento...</h2>
-          <p className="text-xl text-neutral-500 dark:text-neutral-400 leading-relaxed">Eliminando el ruido y estructurando lo esencial.</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#121212] flex overflow-hidden transition-colors duration-300">
-      
-      {/* ProgressBar Top */}
-      <div className="fixed top-0 left-0 right-0 h-1 bg-neutral-100 dark:bg-[#1C1C1C] z-50">
-        <div 
-          className="h-full bg-indigo-600 dark:bg-indigo-500 transition-all duration-500 ease-out"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      {/* Sidebar Mapa (Minimalista) */}
-      <aside className={`fixed lg:static inset-y-0 left-0 w-72 bg-neutral-50 dark:bg-[#1C1C1C] border-r border-neutral-200 dark:border-transparent/50 z-40 transform transition-transform duration-300 ease-in-out ${isMapOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-0 lg:border-none'}`}>
-        <div className="h-full flex flex-col overflow-y-auto p-6 pt-10">
-          
-          <div className="flex items-center justify-between mb-10">
-            <h2 className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-500">
-              Índice
-            </h2>
-            <button onClick={() => setIsMapOpen(false)} className="lg:hidden text-neutral-400 hover:text-neutral-600 p-2">
-              <ChevronRight className="w-5 h-5 rotate-180" />
-            </button>
-          </div>
-
-          <nav className="flex flex-col gap-1">
-            <button
-              onClick={() => handleStepClick(0)}
-              className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${currentStep === 0 ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/50 dark:hover:bg-[#1C1C1C]/50'}`}
-            >
-              <span>Resumen</span>
-              {currentStep > 0 && <CheckCircle2 className="w-4 h-4 text-neutral-400" />}
-            </button>
-            
-            <div className="w-px h-6 bg-neutral-200 dark:bg-[#1C1C1C] ml-8 my-1" />
-
-            {data?.steps?.map((step: any, idx: number) => {
-              const isActive = currentStep === idx + 1;
-              const isPast = currentStep > idx + 1;
-              return (
-                <button
-                  key={step.id}
-                  onClick={() => handleStepClick(idx + 1)}
-                  className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/50 dark:hover:bg-[#1C1C1C]/50'}`}
-                >
-                  <span className="truncate pr-2">{step.shortNav}</span>
-                  {isPast ? <CheckCircle2 className="w-4 h-4 text-neutral-400 shrink-0" /> : <ChevronRight className={`w-4 h-4 shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`} />}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="mt-auto pt-8">
-            <button
-              onClick={resetApp}
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-semibold text-neutral-500 hover:text-[#1A1A1A] hover:bg-neutral-200/50 dark:hover:bg-[#1C1C1C]/50 dark:hover:text-neutral-200 transition-all"
-            >
-              <RefreshCcw className="w-4 h-4" />
-              Nuevo Documento
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Area Principal (Editorial) */}
-      <main ref={contentRef} className="flex-1 h-screen overflow-y-auto scroll-smooth pt-8 lg:pt-16">
-        <button 
-          onClick={toggleTheme}
-          className="fixed top-6 right-6 z-[100] p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors bg-white/50 dark:bg-transparent rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-          title="Alternar tema"
-        >
-          {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-        </button>
-        <div className="max-w-3xl mx-auto px-6 py-8 pb-32">
-          
-          <div className="flex items-center gap-4 mb-16">
-            {(!isMapOpen || window.innerWidth < 1024) && (
-              <button 
-                onClick={() => setIsMapOpen(true)}
-                className="p-2.5 bg-neutral-50 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-transparent text-neutral-500 hover:bg-neutral-100 transition-colors"
-                title="Abrir índice"
-              >
-                <Map className="w-5 h-5" />
-              </button>
-            )}
-            <h1 className="text-lg font-bold text-neutral-400 dark:text-neutral-500 truncate flex-1 uppercase tracking-widest">
-              {data?.title}
-            </h1>
-          </div>
-
-          {currentStep === 0 && (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 max-w-2xl">
-              
-              <div className="mb-16">
-                <div className="flex items-center gap-2 mb-6">
-                  <Brain className="w-5 h-5 text-[#1A1A1A] dark:text-[#EDEDED]" />
-                  <span className="text-sm font-bold tracking-widest uppercase text-[#1A1A1A] dark:text-[#EDEDED]">El Núcleo</span>
-                </div>
-                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#1A1A1A] dark:text-[#EDEDED] leading-tight mb-6 text-balance">
-                  {data?.coreIdea}
-                </h2>
-                <p className="text-xl sm:text-2xl leading-[1.65] text-neutral-700 dark:text-neutral-400 max-w-[50ch]">
-                  {data?.coreSupport}
-                </p>
-              </div>
-
-              <div className="border-t border-neutral-200 dark:border-transparent/50 pt-12 pb-8">
-                <h3 className="text-xs font-bold tracking-widest uppercase text-neutral-400 mb-10">Desglose Rápido (TL;DR)</h3>
-                <div className="grid gap-10">
-                  {data?.tldr?.map((item: any, i: number) => (
-                    <div key={i} className="flex gap-6 items-start group">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-neutral-200 dark:border-transparent flex items-center justify-center text-sm font-bold text-neutral-400 group-hover:border-indigo-500 group-hover:text-indigo-500 transition-colors">
-                        {i + 1}
-                      </div>
-                      <div>
-                        <strong className="block text-[#1A1A1A] dark:text-[#EDEDED] text-lg sm:text-xl font-bold mb-3">{item.title}</strong>
-                        <p className="text-neutral-700 dark:text-neutral-300 text-base sm:text-lg leading-[1.65] max-w-[65ch]">{item.desc}</p>
-                      </div>
+        <div className="shrink-0 px-4 sm:px-8 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto">
+            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-[#1C1C1C] shadow-sm dark:shadow-none">
+              {uploadedFile && (
+                <div className="flex items-center gap-2 px-3 pt-3">
+                  {uploadedFile.isImage && uploadedFile.previewUrl ? (
+                    <div className="relative group">
+                      <img
+                        src={uploadedFile.previewUrl}
+                        alt={uploadedFile.name}
+                        className="w-16 h-16 rounded-xl object-cover border border-neutral-200 dark:border-white/10"
+                      />
+                      <button
+                        type="button"
+                        onClick={removeFile}
+                        className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-neutral-800 text-white shadow-md hover:bg-neutral-700 transition-colors"
+                        aria-label="Quitar imagen"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="inline-flex items-center gap-2 max-w-full px-3 py-1.5 rounded-full bg-neutral-100 dark:bg-white/5 text-sm text-neutral-700 dark:text-neutral-300">
+                      <File className="w-4 h-4 shrink-0 opacity-70" />
+                      <span className="truncate max-w-[220px]">{uploadedFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={removeFile}
+                        className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
+                        aria-label="Quitar archivo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
-              <div className="pt-12 mt-12">
-                <button
-                  onClick={() => handleStepClick(1)}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-5 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
-                >
-                  Empezar a leer <ArrowRight className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          )}
+              {!hideTextInput && (
+                <textarea
+                  ref={textareaRef}
+                  value={inputText}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    adjustComposerHeight(e.target);
+                  }}
+                  rows={1}
+                  placeholder={composerPlaceholder}
+                  className="w-full min-h-[52px] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-relaxed"
+                />
+              )}
 
-          {currentStep > 0 && (
-            <div className="animate-in fade-in slide-in-from-right-8 duration-500 max-w-2xl">
-              
-              <div className="mb-12">
-                <div className="flex items-center gap-4 mb-6">
-                  <span className="text-indigo-600 dark:text-indigo-400 font-bold tracking-widest uppercase text-sm">Paso {currentStep}</span>
-                  {data?.steps[currentStep - 1]?.time && (
-                    <>
-                      <span className="w-1 h-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-                      <span className="text-neutral-500 dark:bg-neutral-400 dark:text-neutral-400 font-medium text-sm">
-                        {data.steps[currentStep - 1].time}
-                      </span>
-                    </>
+              <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                <div className="relative" ref={attachMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setAttachMenuOpen((open) => !open)}
+                    className={`p-2.5 rounded-full transition-colors ${
+                      attachMenuOpen
+                        ? 'bg-neutral-100 dark:bg-white/10 text-neutral-800 dark:text-neutral-200'
+                        : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5'
+                    }`}
+                    title="Adjuntar"
+                    aria-label="Adjuntar"
+                    aria-haspopup="menu"
+                    aria-expanded={attachMenuOpen}
+                  >
+                    <Plus
+                      className={`w-5 h-5 transition-transform ${attachMenuOpen ? 'rotate-45' : ''}`}
+                    />
+                  </button>
+
+                  {attachMenuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute bottom-full left-0 mb-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl p-2 animate-fade-in"
+                    >
+                      <div className="px-1 pt-1 pb-2">
+                        <p className="px-1 mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                          Recientes
+                        </p>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              imageInputRef.current?.click();
+                              setAttachMenuOpen(false);
+                            }}
+                            className="shrink-0 w-14 h-14 rounded-lg border border-dashed border-neutral-300 dark:border-white/20 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:border-neutral-400 dark:hover:border-white/30 transition-colors"
+                            title="Elegir imagen"
+                            aria-label="Elegir imagen"
+                          >
+                            <Plus className="w-5 h-5" />
+                          </button>
+                          {recentImages.map((url, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => attachRecentImage(url)}
+                              className="shrink-0 rounded-lg overflow-hidden border border-neutral-200 dark:border-white/10 hover:ring-2 hover:ring-indigo-400/50 transition-all"
+                              title="Adjuntar imagen reciente"
+                            >
+                              <img src={url} alt="" className="w-14 h-14 object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          cameraInputRef.current?.click();
+                          setAttachMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <Camera className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                        Cámara
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setAttachMenuOpen(false);
+                          fileInputRef.current?.click();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <Paperclip className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                        Añadir archivo
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                <h2 className="text-4xl sm:text-[3.5rem] font-extrabold tracking-tight text-[#1A1A1A] dark:text-[#EDEDED] mb-12 leading-[1.1] max-w-[20ch]">
-                  {data?.steps[currentStep - 1]?.title}
-                </h2>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.csv,.pdf"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  title="Subir archivo de texto o PDF"
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  title="Hacer una foto"
+                />
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  title="Elegir imagen"
+                />
+                <button
+                  type="button"
+                  onClick={handleTransform}
+                  disabled={!canSubmit || appState === 'loading'}
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white transition-all active:scale-95"
+                  title="Transformar"
+                  aria-label="Transformar"
+                >
+                  <ArrowUp className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
-                <div className="mt-8">
-                  {data?.steps[currentStep - 1]?.content?.map((block: any, idx: number) => renderContentBlock(block, idx))}
+  const renderLoadingContent = () => (
+    <>
+      <LoadingState />
+      <div className="max-w-3xl mx-auto px-6 pb-8 w-full flex justify-center">
+        <button
+          onClick={handleCancel}
+          className="px-6 py-3 rounded-xl font-bold text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div
+      className="min-h-dvh bg-[#FAFAFA] dark:bg-[#121212] flex flex-col lg:flex-row transition-colors duration-300"
+      onTouchStart={handleSwipeTouchStart}
+      onTouchEnd={handleSwipeTouchEnd}
+    >
+      {renderSidebar()}
+
+      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col">
+        {appState === 'input' && renderInputContent()}
+
+        {appState === 'loading' && renderLoadingContent()}
+
+        {appState === 'result' && !viewAll && !isComplete && (
+          <div className="flex flex-col h-dvh w-full min-h-0">
+            {(!isMapOpen || isDesktop) && renderProgressBar()}
+
+            <div className="relative flex-1 min-h-0">
+              <div
+                ref={contentRef}
+                className="absolute inset-0 overflow-y-auto touch-pan-y"
+              >
+                <div
+                  className="max-w-3xl mx-auto px-6 py-8 w-full"
+                  style={{
+                    paddingBottom: `calc(${contentBottomPad}px + env(safe-area-inset-bottom, 0px))`,
+                  }}
+                >
+                  <div className="mb-12">
+                    <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
+                      {data?.title}
+                    </h1>
+                    {data?.modelUsed && (
+                      <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
+                        Generado con {data.modelUsed}
+                      </p>
+                    )}
+                  </div>
+
+                  {currentStep === 0 && renderResumen()}
+                  {currentStep > 0 && renderStep(currentStep)}
                 </div>
               </div>
 
-              <div className="mt-20 pt-8 border-t border-neutral-200 dark:border-transparent/50 flex gap-4">
-                <button
-                  onClick={() => handleStepClick(currentStep - 1)}
-                  className="flex-1 bg-transparent text-neutral-600 dark:text-neutral-400 p-4 rounded-xl font-bold border border-neutral-200 dark:border-transparent hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors flex justify-center"
-                >
-                  Atrás
-                </button>
-                
-                {currentStep < data?.steps.length ? (
-                  <button
-                    onClick={() => handleStepClick(currentStep + 1)}
-                    className="flex-[2] bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
-                  >
-                    Siguiente <ArrowRight className="w-5 h-5" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setCurrentStep(0);
-                      alert("¡Has llegado al final del contenido!");
-                    }}
-                    className="flex-[2] bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
-                  >
-                    <Check className="w-6 h-6" /> Finalizar
-                  </button>
+              <motion.div
+                className="absolute inset-x-0 bottom-0"
+                initial={false}
+                animate={
+                  shouldShowStepFooter
+                    ? { y: 0, opacity: 1 }
+                    : { y: reduceMotion ? 0 : 12, opacity: 0 }
+                }
+                transition={
+                  reduceMotion ? { duration: 0 } : { duration: 0.25, ease: 'easeOut' }
+                }
+                style={{ pointerEvents: shouldShowStepFooter ? 'auto' : 'none' }}
+              >
+                <div ref={stepFooterRef}>{renderStepNavFooter()}</div>
+              </motion.div>
+            </div>
+          </div>
+        )}
+
+        {appState === 'result' && (viewAll || isComplete) && (
+          <>
+            {(!isMapOpen || isDesktop) && renderProgressBar(true)}
+
+            <div
+              className={`max-w-3xl mx-auto px-6 py-8 w-full ${
+                viewAll
+                  ? 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+                  : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
+              }`}
+            >
+              <div className="mb-12">
+                <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
+                  {data?.title}
+                </h1>
+                {data?.modelUsed && (
+                  <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
+                    Generado con {data.modelUsed}
+                  </p>
                 )}
               </div>
-            </div>
-          )}
 
-        </div>
+              {isComplete ? (
+                renderCompletion()
+              ) : (
+                <div className="animate-fade-in">
+                  {renderResumen()}
+                  {data?.steps?.map((_: any, idx: number) => renderStep(idx + 1))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

@@ -1,0 +1,414 @@
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  ChevronDown,
+  FileText,
+  Link2,
+  Youtube,
+  Upload,
+  File,
+  Pin,
+  PinOff,
+  X,
+} from 'lucide-react';
+import { CATEGORIES, DEFAULT_CATEGORY, normalizeCategory } from '../categories';
+import {
+  formatRelativeDate,
+  type HistoryEntry,
+  type SourceType,
+} from '../history';
+
+type HistoryPanelProps = {
+  entries: HistoryEntry[];
+  activeId: string | null;
+  disabled?: boolean;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  onTogglePin: (id: string) => void;
+};
+
+type ActionMenuState = {
+  entry: HistoryEntry;
+  top: number;
+  left: number;
+  width: number;
+};
+
+const SOURCE_ICONS: Record<SourceType, typeof FileText> = {
+  text: FileText,
+  link: Link2,
+  youtube: Youtube,
+  file: Upload,
+  pdf: File,
+};
+
+const GROUPS_STORAGE_KEY = 'tdah-history-groups';
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
+
+function loadExpandedGroups(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(GROUPS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveExpandedGroups(groups: Record<string, boolean>) {
+  localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+}
+
+function sortPinnedEntries(entries: HistoryEntry[]) {
+  return [...entries].sort(
+    (a, b) => (b.pinnedAt ?? b.updatedAt) - (a.pinnedAt ?? a.updatedAt)
+  );
+}
+
+export default function HistoryPanel({
+  entries,
+  activeId,
+  disabled = false,
+  onSelect,
+  onDelete,
+  onTogglePin,
+}: HistoryPanelProps) {
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(loadExpandedGroups);
+  const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const suppressClickRef = useRef(false);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pressTargetRef = useRef<HTMLButtonElement | null>(null);
+  const pressEntryRef = useRef<HistoryEntry | null>(null);
+
+  const pinnedEntries = useMemo(
+    () => sortPinnedEntries(entries.filter((entry) => entry.pinned)),
+    [entries]
+  );
+
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<string, HistoryEntry[]>();
+
+    for (const entry of entries) {
+      const category = normalizeCategory(entry.category);
+      const list = groups.get(category) ?? [];
+      list.push(entry);
+      groups.set(category, list);
+    }
+
+    for (const list of groups.values()) {
+      list.sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+
+    const ordered: { category: string; entries: HistoryEntry[] }[] = [];
+    for (const category of CATEGORIES) {
+      const list = groups.get(category);
+      if (list?.length) ordered.push({ category, entries: list });
+    }
+
+    return ordered;
+  }, [entries]);
+
+  useEffect(() => {
+    saveExpandedGroups(expandedGroups);
+  }, [expandedGroups]);
+
+  useEffect(() => {
+    if (!actionMenu) return;
+
+    const closeMenu = () => setActionMenu(null);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+
+    return () => {
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [actionMenu]);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const resetPressState = () => {
+    clearLongPress();
+    pressStartRef.current = null;
+    pressTargetRef.current = null;
+    pressEntryRef.current = null;
+  };
+
+  const openActionMenu = (entry: HistoryEntry, target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const menuWidth = Math.max(rect.width, 160);
+    const left = Math.min(rect.left, window.innerWidth - menuWidth - 12);
+
+    setActionMenu({
+      entry,
+      top: Math.min(rect.bottom + 6, window.innerHeight - 56),
+      left: Math.max(12, left),
+      width: menuWidth,
+    });
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(12);
+    }
+  };
+
+  const triggerLongPress = () => {
+    const entry = pressEntryRef.current;
+    const target = pressTargetRef.current;
+    if (!entry || !target) return;
+
+    longPressTriggeredRef.current = true;
+    suppressClickRef.current = true;
+    openActionMenu(entry, target);
+  };
+
+  const handleEntryPointerDown = (entry: HistoryEntry, e: PointerEvent<HTMLButtonElement>) => {
+    if (disabled || e.button !== 0) return;
+
+    longPressTriggeredRef.current = false;
+    pressStartRef.current = { x: e.clientX, y: e.clientY };
+    pressTargetRef.current = e.currentTarget;
+    pressEntryRef.current = entry;
+    clearLongPress();
+
+    if (e.currentTarget.setPointerCapture) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+
+    longPressTimerRef.current = window.setTimeout(triggerLongPress, LONG_PRESS_MS);
+  };
+
+  const handleEntryPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    if (!pressStartRef.current || longPressTimerRef.current === null) return;
+
+    const dx = e.clientX - pressStartRef.current.x;
+    const dy = e.clientY - pressStartRef.current.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_THRESHOLD_PX) {
+      clearLongPress();
+    }
+  };
+
+  const handleEntryPointerUp = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    clearLongPress();
+
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      resetPressState();
+      return;
+    }
+
+    resetPressState();
+  };
+
+  const handleEntryPointerCancel = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    clearLongPress();
+    longPressTriggeredRef.current = false;
+    resetPressState();
+  };
+
+  const handleEntryClick = (entryId: string) => {
+    if (disabled || suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+
+    onSelect(entryId);
+  };
+
+  const handleEntryContextMenu = (entry: HistoryEntry, e: MouseEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    suppressClickRef.current = true;
+    openActionMenu(entry, e.currentTarget);
+  };
+
+  const toggleGroup = (category: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [category]: prev[category] === false,
+    }));
+  };
+
+  const isGroupExpanded = (category: string) => expandedGroups[category] !== false;
+
+  const handleTogglePinFromMenu = () => {
+    if (!actionMenu) return;
+    onTogglePin(actionMenu.entry.id);
+    setActionMenu(null);
+  };
+
+  const renderEntryItem = (entry: HistoryEntry) => {
+    const Icon = SOURCE_ICONS[entry.sourceType] || FileText;
+    const isActive = entry.id === activeId;
+
+    return (
+      <li key={entry.id} className="group relative">
+        <button
+          type="button"
+          onPointerDown={(e) => handleEntryPointerDown(entry, e)}
+          onPointerMove={handleEntryPointerMove}
+          onPointerUp={handleEntryPointerUp}
+          onPointerCancel={handleEntryPointerCancel}
+          onClick={() => handleEntryClick(entry.id)}
+          onContextMenu={(e) => handleEntryContextMenu(entry, e)}
+          disabled={disabled}
+          className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-none [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
+            isActive
+              ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+              : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'
+          } ${actionMenu?.entry.id === entry.id ? 'ring-2 ring-indigo-400/40 dark:ring-indigo-500/30' : ''}`}
+        >
+          <Icon className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold truncate">{entry.title}</span>
+            <span className="block text-xs opacity-70 mt-0.5">
+              {formatRelativeDate(entry.updatedAt)}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(entry.id);
+          }}
+          disabled={disabled}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-neutral-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all disabled:opacity-0"
+          aria-label={`Eliminar ${entry.title}`}
+          title="Eliminar"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </li>
+    );
+  };
+
+  return (
+    <div className="mb-8">
+      <button
+        type="button"
+        onClick={() => setIsHistoryExpanded((prev) => !prev)}
+        className="w-full flex items-center gap-2 mb-4 text-left rounded-lg -mx-2 px-2 py-1 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        aria-expanded={isHistoryExpanded}
+      >
+        <ChevronDown
+          className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${isHistoryExpanded ? '' : '-rotate-90'}`}
+        />
+        <span className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-400">
+          Historial
+        </span>
+      </button>
+
+      {isHistoryExpanded && (
+        <>
+          {entries.length === 0 ? (
+            <p className="text-sm text-neutral-500 dark:text-neutral-500 px-1 py-2">
+              Tus mapas generados aparecerán aquí.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {pinnedEntries.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
+                    <Pin className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                    <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
+                      Fijados
+                    </span>
+                  </div>
+                  <ul className="flex flex-col gap-1">{pinnedEntries.map(renderEntryItem)}</ul>
+                </div>
+              )}
+
+              {groupedEntries.map(({ category, entries: groupEntries }) => {
+                const expanded = isGroupExpanded(category);
+
+                return (
+                  <div key={category}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(category)}
+                      className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+                      aria-expanded={expanded}
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${expanded ? '' : '-rotate-90'}`}
+                      />
+                      <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400 flex-1 truncate">
+                        {category}
+                      </span>
+                    </button>
+
+                    {expanded && (
+                      <ul className="flex flex-col gap-1 mt-1">
+                        {groupEntries.map(renderEntryItem)}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {actionMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label="Cerrar menú"
+              className="fixed inset-0 z-[120] cursor-default"
+              onClick={() => setActionMenu(null)}
+            />
+            <div
+              className="fixed z-[121] min-w-[10rem] rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden py-1"
+              style={{
+                top: actionMenu.top,
+                left: actionMenu.left,
+                width: actionMenu.width,
+              }}
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleTogglePinFromMenu}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+              >
+                {actionMenu.entry.pinned ? (
+                  <>
+                    <PinOff className="w-4 h-4 shrink-0 text-neutral-500" />
+                    Desfijar
+                  </>
+                ) : (
+                  <>
+                    <Pin className="w-4 h-4 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                    Fijar
+                  </>
+                )}
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+export { DEFAULT_CATEGORY };

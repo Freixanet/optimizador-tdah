@@ -8,7 +8,146 @@
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  html {
+    scroll-padding-top: 7rem;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   button {
     cursor: pointer;
+  }
+}
+
+@layer utilities {
+  .content-column {
+    width: 100%;
+    max-width: 48rem;
+  }
+
+  .content-prose {
+    max-width: 65ch;
+  }
+
+  .heading-core {
+    font-size: clamp(1.75rem, 2.2vw + 1rem, 2.75rem);
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.014em;
+    text-wrap: balance;
+  }
+
+  .heading-step {
+    font-size: clamp(1.875rem, 2vw + 1rem, 2.875rem);
+    font-weight: 700;
+    line-height: 1.22;
+    letter-spacing: -0.014em;
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .animate-atom-rotate {
+    animation: atom-rotate 16s linear infinite;
+    transform-origin: center;
+  }
+
+  .animate-atom-rotate-fast {
+    animation: atom-rotate 5s linear infinite;
+    transform-origin: center;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes celebrate-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  55% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes atom-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+  overflow: visible;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out both;
+  overflow: visible;
+}
+
+.animate-slide-right {
+  animation: slide-right 0.4s ease-out both;
+  overflow: visible;
+}
+
+.animate-celebrate {
+  animation: celebrate-pop 0.55s ease-out both;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
