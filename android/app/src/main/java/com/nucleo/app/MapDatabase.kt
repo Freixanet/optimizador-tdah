@@ -11,8 +11,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MapDao {
     @Query("SELECT * FROM maps ORDER BY updatedAt DESC") fun observeAll(): Flow<List<CachedMap>>
+    @Query("SELECT * FROM maps ORDER BY updatedAt DESC") suspend fun fetchAll(): List<CachedMap>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(map: CachedMap)
     @Query("DELETE FROM maps WHERE id = :id") suspend fun delete(id: String)
+    @Query("DELETE FROM maps") suspend fun deleteAll()
 }
 
 @Database(entities = [CachedMap::class], version = 1)
