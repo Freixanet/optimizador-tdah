@@ -10,6 +10,11 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: '17.0'
+    info:
+      path: Nucleo/Info.plist
+      properties:
+        CFBundleDisplayName: Núcleo
+        UILaunchScreen: {}
     sources:
       - path: Nucleo
     settings:
