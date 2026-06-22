@@ -13,7 +13,7 @@ android { namespace = "com.nucleo.app"; compileSdk = 35
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "API_BASE_URL", "\"https://staging.example.com\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://optimizador-tdah-production.up.railway.app\"")
         buildConfigField("String", "SUPABASE_URL", "\"https://your-project.supabase.co\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"\"")
     }
