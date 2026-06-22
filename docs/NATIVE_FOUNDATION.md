@@ -10,7 +10,7 @@ This document tracks the reversible native migration without replacing the web a
 | Shared contract | Done | [`src/contracts.ts`](../src/contracts.ts) defines `MapRecord`, `SavedSession`, `TransformRequest`. |
 | Express / Railway | Done | [`server.ts`](../server.ts) keeps `/api/transform`, adds optional Supabase auth, rate limits, upload caps, `/health`. |
 | Supabase schema | Done | [`supabase/migrations/20260621_initial_sync.sql`](../supabase/migrations/20260621_initial_sync.sql) with RLS. Apply in **staging first**. |
-| Web cloud sync | Done (optional) | Web works offline with localStorage. If `VITE_SUPABASE_*` is set, profile menu exposes Apple/Google sign-in and one-time local migration. |
+| Web cloud sync | Done (optional) | Web works offline with localStorage. With `VITE_SUPABASE_*`, profile menu offers Google or email/password sign-in, session persistence, and one-time local migration. |
 | iOS shell | Done (optional sync) | SwiftUI app in `ios/` calls `/api/transform`, caches maps with SwiftData. OAuth + cloud sync when `SUPABASE_ANON_KEY` is set. Redirect: `com.nucleo.app://login-callback`. |
 | Android shell | Done (optional sync) | Compose app in `android/` calls `/api/transform`, caches maps with Room. OAuth + cloud sync when `SUPABASE_ANON_KEY` is set in `BuildConfig`. Same redirect URL as iOS. |
 
@@ -38,6 +38,9 @@ npm run dev
 
 # Backup current work
 ./scripts/backup-working-tree.sh
+
+# Supabase local env (preserves GEMINI_API_KEY)
+./scripts/setup-supabase.sh write-env --url https://YOUR_REF.supabase.co --anon-key eyJ...
 
 # iOS
 cd ios && xcodegen generate

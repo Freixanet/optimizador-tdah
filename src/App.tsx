@@ -53,6 +53,8 @@ import {
   pullCloudHistory,
   pushHistoryEntry,
   signInWith,
+  signInWithPassword,
+  signUpWithPassword,
   signOut,
 } from './cloudHistory';
 import { isCloudSyncConfigured, supabase } from './supabase';
@@ -177,6 +179,39 @@ function mergeHistory(localEntries: HistoryEntry[], cloudEntries: HistoryEntry[]
   return [...entries.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 30);
 }
 
+function readAuthCallbackError(): string | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.search.slice(1);
+  if (!raw) return null;
+
+  const params = new URLSearchParams(raw);
+  if (!params.get('error') && !params.get('error_code')) return null;
+
+  if (params.get('error_code') === 'otp_expired') {
+    return 'El acceso caducó. Vuelve a entrar con Google o email y contraseña desde el menú de cuenta (icono M).';
+  }
+
+  const description = params.get('error_description');
+  if (description) return decodeURIComponent(description.replace(/\+/g, ' '));
+  return 'No se pudo iniciar sesión. Inténtalo de nuevo desde el menú de cuenta.';
+}
+
+function clearAuthCallbackFromUrl() {
+  if (typeof window === 'undefined') return;
+  window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+}
+
+function authErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'No se pudo completar el acceso.';
+  const msg = err.message.toLowerCase();
+  if (msg.includes('invalid login credentials')) return 'Email o contraseña incorrectos.';
+  if (msg.includes('user already registered')) return 'Esa cuenta ya existe. Prueba a entrar.';
+  if (msg.includes('password') && msg.includes('least')) return 'La contraseña debe tener al menos 6 caracteres.';
+  return err.message;
+}
+
 export default function App() {
   const initialHistory: HistoryStore =
     typeof window !== 'undefined' ? loadHistory() : { activeId: null, entries: [] };
@@ -205,6 +240,11 @@ export default function App() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [cloudUser, setCloudUser] = useState<{ email?: string | null } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authIsSignUp, setAuthIsSignUp] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [recentImages, setRecentImages] = useState<string[]>(loadRecentImages);
   const [isIndexExpanded, setIsIndexExpanded] = useState(true);
@@ -253,6 +293,14 @@ export default function App() {
   React.useEffect(() => {
     historyStoreRef.current = historyStore;
   }, [historyStore]);
+
+  React.useEffect(() => {
+    const authError = readAuthCallbackError();
+    if (authError) {
+      setSyncError(authError);
+      clearAuthCallbackFromUrl();
+    }
+  }, []);
 
   React.useEffect(() => {
     if (!supabase) return;
@@ -1030,17 +1078,89 @@ export default function App() {
           {isCloudSyncConfigured && !cloudUser && (
             <>
               <p className="px-3 pt-2 text-[10px] font-bold tracking-widest uppercase text-neutral-400">Sincronización</p>
-              <button type="button" role="menuitem" onClick={() => void signInWith('google')} className="w-full text-left px-3 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
-                Continuar con Google
-              </button>
-              <button type="button" role="menuitem" onClick={() => void signInWith('apple')} className="w-full text-left px-3 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
-                Continuar con Apple
-              </button>
+              <div className="px-3 py-2 space-y-2">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void signInWith('google')}
+                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2.5 text-sm font-semibold text-neutral-800 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  Continuar con Google
+                </button>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 text-center leading-snug">
+                  Un clic. La sesión queda guardada en este navegador.
+                </p>
+              </div>
+              <form
+                className="px-3 py-2 space-y-2 border-t border-neutral-200 dark:border-white/10"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setAuthError(null);
+                  setAuthBusy(true);
+                  const action = authIsSignUp
+                    ? signUpWithPassword(authEmail, authPassword)
+                    : signInWithPassword(authEmail, authPassword);
+                  void action
+                    .then(() => {
+                      setAuthPassword('');
+                      setProfileMenuOpen(false);
+                    })
+                    .catch((err) => setAuthError(authErrorMessage(err)))
+                    .finally(() => setAuthBusy(false));
+                }}
+              >
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">O con email y contraseña</p>
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="tu@email.com"
+                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-2.5 py-2 text-sm"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  autoComplete={authIsSignUp ? 'new-password' : 'current-password'}
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="Contraseña (mín. 6)"
+                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-2.5 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  disabled={authBusy}
+                  className="w-full rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-2.5 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {authBusy ? 'Entrando…' : authIsSignUp ? 'Crear cuenta' : 'Entrar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthIsSignUp((value) => !value);
+                    setAuthError(null);
+                  }}
+                  className="w-full text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {authIsSignUp ? '¿Ya tienes cuenta? Entrar' : '¿Primera vez? Crear cuenta'}
+                </button>
+                {authError && <p className="text-xs text-red-500">{authError}</p>}
+              </form>
             </>
           )}
           {cloudUser && (
-            <div className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400 truncate">
-              Sincronizado como {cloudUser.email ?? 'tu cuenta'}
+            <div className="px-3 py-2">
+              <p className="text-[10px] font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-400">
+                Cuenta conectada
+              </p>
+              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 truncate">
+                {cloudUser.email ?? 'tu cuenta'}
+              </p>
+              <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                Tu historial se sincroniza entre dispositivos.
+              </p>
             </div>
           )}
           <button
@@ -1078,6 +1198,11 @@ export default function App() {
     );
   };
 
+  const profileInitial = cloudUser?.email?.[0]?.toUpperCase() ?? 'M';
+  const profileTitle = cloudUser
+    ? `Sincronizado como ${cloudUser.email ?? 'tu cuenta'}`
+    : 'Cuenta y ajustes';
+
   const renderProfileTrigger = (variant: 'compact' | 'expanded') => (
     <div className="relative" ref={profileMenuRef}>
       <button
@@ -1088,11 +1213,21 @@ export default function App() {
         }`}
         aria-expanded={profileMenuOpen}
         aria-haspopup="menu"
-        title="Cuenta y ajustes"
-        aria-label="Cuenta y ajustes"
+        title={profileTitle}
+        aria-label={profileTitle}
       >
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm">
-          <span className="text-xs font-bold text-white leading-none">M</span>
+        <div
+          className={`relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm ${
+            cloudUser ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-[#1C1C1C]' : ''
+          }`}
+        >
+          <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
+          {cloudUser && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-[#1C1C1C]"
+              aria-hidden="true"
+            />
+          )}
         </div>
       </button>
       {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}

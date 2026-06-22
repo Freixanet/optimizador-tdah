@@ -63,8 +63,9 @@ Consulta [`docs/NATIVE_FOUNDATION.md`](docs/NATIVE_FOUNDATION.md) para el estado
   un JDK local para compilarla con Gradle.
 - `supabase/migrations/` contiene una migración aditiva para aplicar **primero en un
   proyecto de staging**. Las políticas RLS impiden que una cuenta acceda a mapas ajenos.
-- La web sigue funcionando sin Supabase. Al definir las variables `VITE_SUPABASE_*`,
-  muestra Apple/Google en el menú de perfil y migra el historial local al iniciar sesión.
+- La web sigue funcionando sin Supabase. Con `VITE_SUPABASE_*`, el menú de perfil permite
+  entrar con **Google** (un clic, sesión persistente) o **email + contraseña**, y migra el
+  historial local al iniciar sesión.
 - Railway puede usar `railway.toml`; configura sus secretos en el panel, nunca en Git.
 
 Antes de producción, registra las URLs de retorno de web/iOS/Android en Supabase y

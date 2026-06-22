@@ -47,6 +47,27 @@ export async function signInWith(provider: 'google' | 'apple') {
   });
 }
 
+export async function signInWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error('La sincronización todavía no está configurada.');
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (error) throw error;
+}
+
+export async function signUpWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error('La sincronización todavía no está configurada.');
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+  });
+  if (error) throw error;
+  if (!data.session) {
+    throw new Error('Revisa tu email para confirmar la cuenta, o usa Google para entrar al instante.');
+  }
+}
+
 export async function signOut() {
   if (supabase) await supabase.auth.signOut();
 }
