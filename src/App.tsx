@@ -1242,10 +1242,11 @@ export default function App() {
   const renderCollapsedRail = () => (
     <div className="hidden lg:flex flex-col h-full w-14 shrink-0 items-center py-5 gap-1">
       <button
-        onClick={toggleSidebar}
+        type="button"
+        onClick={handleNewMap}
         className="p-2 rounded-xl text-[#1A1A1A] dark:text-[#EDEDED] hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-        title="Abrir panel"
-        aria-label="Abrir panel lateral"
+        title="Ir a inicio"
+        aria-label="Ir a inicio"
       >
         <AppIcon className="w-7 h-7" />
       </button>
@@ -1271,12 +1272,18 @@ export default function App() {
 
   const renderSidebarBrand = () => (
     <div className="flex items-center justify-between gap-2 mb-6">
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={handleNewMap}
+        className="flex items-center gap-2 min-w-0 rounded-lg -ml-1 px-1 py-0.5 text-left hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        title="Ir a inicio"
+        aria-label="Ir a inicio"
+      >
         <AppIcon className="w-8 h-8 shrink-0 text-[#1A1A1A] dark:text-[#EDEDED]" />
         <span className="text-xl font-semibold text-[#1A1A1A] dark:text-[#EDEDED] tracking-tight">
           Nucleo
         </span>
-      </div>
+      </button>
       <button
         type="button"
         onClick={toggleSidebar}
