@@ -1,5 +1,11 @@
 import type { HistoryEntry, HistoryStore } from './history';
+import { isNativeShell } from './nativeShell';
 import { supabase } from './supabase';
+
+function authRedirectUrl() {
+  if (isNativeShell()) return 'com.nucleo.app://login-callback';
+  return window.location.origin;
+}
 
 type CloudMap = {
   id: string;
@@ -43,7 +49,7 @@ export async function signInWith(provider: 'google' | 'apple') {
   if (!supabase) throw new Error('La sincronización todavía no está configurada.');
   return supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: authRedirectUrl() },
   });
 }
 

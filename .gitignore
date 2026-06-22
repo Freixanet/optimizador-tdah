@@ -9,9 +9,13 @@ coverage/
 !.env.staging.example
 
 # Native build artifacts
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
+android-native/.gradle/
+android-native/build/
+android-native/app/build/
+android-native/local.properties
+ios-native/DerivedData/
+ios-native/**/*.xcuserstate
 ios/DerivedData/
 ios/**/*.xcuserstate
+ios/App/Pods/
+ios/App/App/public/

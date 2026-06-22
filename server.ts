@@ -15,7 +15,13 @@ const requestBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function allowedOrigins() {
   return new Set(
-    [process.env.APP_URL, ...(process.env.ALLOWED_ORIGINS ?? "").split(",")]
+    [
+      process.env.APP_URL,
+      ...(process.env.ALLOWED_ORIGINS ?? "").split(","),
+      "capacitor://localhost",
+      "http://localhost",
+      "https://localhost",
+    ]
       .map((origin) => origin?.trim())
       .filter(Boolean)
   );

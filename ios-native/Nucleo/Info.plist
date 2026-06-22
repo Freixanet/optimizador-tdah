@@ -22,14 +22,5 @@
 	<string>1</string>
 	<key>UILaunchScreen</key>
 	<dict/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.nucleo.app</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

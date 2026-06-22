@@ -25,9 +25,11 @@ import {
   Camera,
   Paperclip,
 } from 'lucide-react';
+import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import LoadingState from './components/LoadingState';
+import ReadingProgressBar from './components/ReadingProgressBar';
 import {
   getInitialModelPreference,
   MODEL_OPTIONS,
@@ -250,7 +252,6 @@ export default function App() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [recentImages, setRecentImages] = useState<string[]>(loadRecentImages);
   const [isIndexExpanded, setIsIndexExpanded] = useState(true);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [showStepFooter, setShowStepFooter] = useState(false);
   const reduceMotion = useReducedMotion();
 
@@ -276,11 +277,11 @@ export default function App() {
 
   const progress = useMemo(() => {
     if (isComplete) return 100;
-    if (viewAll) return scrollProgress;
+    if (viewAll) return 0;
     if (!data || totalSteps === 0) return 0;
     const segments = totalSteps + 1;
     return (currentStep / (segments - 1)) * 100;
-  }, [isComplete, viewAll, data, totalSteps, currentStep, scrollProgress]);
+  }, [isComplete, viewAll, data, totalSteps, currentStep]);
 
   const progressLabel = useMemo(() => {
     if (!data || totalSteps === 0) return '';
@@ -368,44 +369,6 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [attachMenuOpen]);
-
-  React.useEffect(() => {
-    if (appState !== 'result' || !data || totalSteps === 0 || !viewAll) {
-      if (!viewAll) setScrollProgress(0);
-      return;
-    }
-
-    const updateProgress = () => {
-      if (isComplete) {
-        setScrollProgress(100);
-        return;
-      }
-
-      const scrollTop = window.scrollY;
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-      const scrollRatio = maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, scrollTop / maxScroll));
-      setScrollProgress(scrollRatio * 100);
-    };
-
-    let rafId: number | null = null;
-    const onScroll = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        updateProgress();
-      });
-    };
-
-    updateProgress();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', updateProgress);
-
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', updateProgress);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [appState, data, totalSteps, viewAll, isComplete]);
 
   React.useEffect(() => {
     if (appState !== 'result') return;
@@ -741,7 +704,7 @@ export default function App() {
       const accessToken = supabase
         ? (await supabase.auth.getSession()).data.session?.access_token
         : undefined;
-      const response = (await fetchWithRetry('/api/transform', {
+      const response = (await fetchWithRetry(apiUrl('/api/transform'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1680,41 +1643,15 @@ export default function App() {
   );
 
   const renderProgressBar = (sticky = false) => (
-    <div
-      className={`shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5 pt-[env(safe-area-inset-top)]${sticky ? ' sticky top-0 z-40' : ''}`}
-      role="region"
-      aria-label="Progreso de lectura"
-    >
-      <div className="flex items-center justify-between gap-3 py-2.5 px-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            className="inline-flex lg:hidden -ml-1 shrink-0 p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
-            title="Abrir navegación"
-            aria-label="Abrir navegación"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <span className="truncate text-xs sm:text-sm font-bold text-neutral-700 dark:text-neutral-200">
-            {progressLabel}
-          </span>
-        </div>
-        <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-xs sm:text-sm font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300" aria-live="polite">
-          {Math.round(progress)}%
-        </span>
-      </div>
-      <div className="h-2 bg-neutral-200 dark:bg-neutral-800">
-        <div
-          className={`h-full bg-indigo-600 dark:bg-indigo-500 rounded-r-full${viewAll ? '' : ' transition-all duration-500 ease-out'}`}
-          style={{ width: `${progress}%` }}
-          role="progressbar"
-          aria-valuenow={Math.round(progress)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        />
-      </div>
-    </div>
+    <ReadingProgressBar
+      active={appState === 'result'}
+      viewAll={viewAll}
+      isComplete={isComplete}
+      stepProgress={progress}
+      progressLabel={progressLabel}
+      sticky={sticky}
+      onToggleSidebar={toggleSidebar}
+    />
   );
 
   const renderInputContent = () => {

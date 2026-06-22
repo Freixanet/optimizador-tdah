@@ -112,15 +112,21 @@ final class MapStore: ObservableObject {
 }
 
 struct RootView: View {
+    private enum Tab: Hashable {
+        case newMap
+        case history
+    }
+
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var store: MapStore
     @Environment(\.modelContext) private var modelContext
     @State private var text = ""
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var showingDocumentPicker = false
+    @State private var selectedTab: Tab = .newMap
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 Form {
                     Section("Nuevo mapa") {
@@ -160,14 +166,26 @@ struct RootView: View {
                 }
             }
             .tabItem { Label("Nuevo", systemImage: "square.and.pencil") }
+            .tag(Tab.newMap)
 
             NavigationStack {
                 List(store.maps) { map in
                     Button(map.title) { store.currentMap = map }
                 }
                 .navigationTitle("Historial")
+                .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+                    NewMapGlassButton {
+                        text = ""
+                        pickedPhoto = nil
+                        selectedTab = .newMap
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                }
             }
             .tabItem { Label("Historial", systemImage: "clock") }
+            .tag(Tab.history)
         }
         .onAppear { store.attach(context: modelContext) }
         .task {

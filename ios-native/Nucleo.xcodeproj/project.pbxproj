@@ -8,20 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		0AFE0163D4C57088BDD59A6F /* NucleoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10FDF55FB97A67E2ED22474B /* NucleoApp.swift */; };
+		28526DEBD66F94089C4EB964 /* CloudSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731558C999AEF25BD50879F1 /* CloudSyncService.swift */; };
 		4F7FB93D8A70122170384357 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = F52724285D42702F1302DDF2 /* Supabase */; };
 		50DCDADE86A1DD1E7C858771 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61527944091ECF46D5AAD5 /* AppConfiguration.swift */; };
+		5DEA95523DCD9605821F89C0 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADB784CCDDB857FD569A10F /* AuthService.swift */; };
 		A239CF5DD1543DD0D1BCB4B1 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58633D22410DA6DC26F8DB81 /* DocumentPicker.swift */; };
 		C79C4D0429F1BDE0DAC94F0A /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD7D2DB5E0402EC114A9D25 /* APIClient.swift */; };
 		CE948E1205673F917F6D53F0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD26CCFB7DFC6D1CE716754 /* RootView.swift */; };
 		D1C15F922052B84F336D386B /* ActionMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05CD74A8FD2419933AD0AAD1 /* ActionMap.swift */; };
+		F4BD3B6B5C74E002FB4C196E /* NewMapGlassButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D45C702D4EC179BA922C301 /* NewMapGlassButton.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		05CD74A8FD2419933AD0AAD1 /* ActionMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionMap.swift; sourceTree = "<group>"; };
 		10FDF55FB97A67E2ED22474B /* NucleoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NucleoApp.swift; sourceTree = "<group>"; };
+		1D45C702D4EC179BA922C301 /* NewMapGlassButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMapGlassButton.swift; sourceTree = "<group>"; };
 		58633D22410DA6DC26F8DB81 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
+		5ADB784CCDDB857FD569A10F /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		6DD26CCFB7DFC6D1CE716754 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		71DD9B4C1A6644A130966E09 /* Nucleo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Nucleo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		731558C999AEF25BD50879F1 /* CloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncService.swift; sourceTree = "<group>"; };
 		DF61527944091ECF46D5AAD5 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		F9794E1B7DE71052B19B737E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FDD7D2DB5E0402EC114A9D25 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
@@ -45,8 +51,11 @@
 				05CD74A8FD2419933AD0AAD1 /* ActionMap.swift */,
 				FDD7D2DB5E0402EC114A9D25 /* APIClient.swift */,
 				DF61527944091ECF46D5AAD5 /* AppConfiguration.swift */,
+				5ADB784CCDDB857FD569A10F /* AuthService.swift */,
+				731558C999AEF25BD50879F1 /* CloudSyncService.swift */,
 				58633D22410DA6DC26F8DB81 /* DocumentPicker.swift */,
 				F9794E1B7DE71052B19B737E /* Info.plist */,
+				1D45C702D4EC179BA922C301 /* NewMapGlassButton.swift */,
 				10FDF55FB97A67E2ED22474B /* NucleoApp.swift */,
 				6DD26CCFB7DFC6D1CE716754 /* RootView.swift */,
 			);
@@ -132,7 +141,10 @@
 				C79C4D0429F1BDE0DAC94F0A /* APIClient.swift in Sources */,
 				D1C15F922052B84F336D386B /* ActionMap.swift in Sources */,
 				50DCDADE86A1DD1E7C858771 /* AppConfiguration.swift in Sources */,
+				5DEA95523DCD9605821F89C0 /* AuthService.swift in Sources */,
+				28526DEBD66F94089C4EB964 /* CloudSyncService.swift in Sources */,
 				A239CF5DD1543DD0D1BCB4B1 /* DocumentPicker.swift in Sources */,
+				F4BD3B6B5C74E002FB4C196E /* NewMapGlassButton.swift in Sources */,
 				0AFE0163D4C57088BDD59A6F /* NucleoApp.swift in Sources */,
 				CE948E1205673F917F6D53F0 /* RootView.swift in Sources */,
 			);
