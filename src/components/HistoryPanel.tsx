@@ -63,6 +63,7 @@ export default function HistoryPanel({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const suppressClickRef = useRef(false);
+  const scrollIntentRef = useRef(false);
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const pressTargetRef = useRef<HTMLButtonElement | null>(null);
   const pressEntryRef = useRef<HistoryEntry | null>(null);
@@ -137,14 +138,11 @@ export default function HistoryPanel({
     if (disabled || e.button !== 0) return;
 
     longPressTriggeredRef.current = false;
+    scrollIntentRef.current = false;
     pressStartRef.current = { x: e.clientX, y: e.clientY };
     pressTargetRef.current = e.currentTarget;
     pressEntryRef.current = entry;
     clearLongPress();
-
-    if (e.currentTarget.setPointerCapture) {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
 
     longPressTimerRef.current = window.setTimeout(triggerLongPress, LONG_PRESS_MS);
   };
@@ -156,14 +154,11 @@ export default function HistoryPanel({
     const dy = e.clientY - pressStartRef.current.y;
     if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_THRESHOLD_PX) {
       clearLongPress();
+      scrollIntentRef.current = true;
     }
   };
 
-  const handleEntryPointerUp = (e: PointerEvent<HTMLButtonElement>) => {
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-
+  const handleEntryPointerUp = () => {
     clearLongPress();
 
     if (longPressTriggeredRef.current) {
@@ -175,19 +170,16 @@ export default function HistoryPanel({
     resetPressState();
   };
 
-  const handleEntryPointerCancel = (e: PointerEvent<HTMLButtonElement>) => {
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-
+  const handleEntryPointerCancel = () => {
     clearLongPress();
     longPressTriggeredRef.current = false;
     resetPressState();
   };
 
   const handleEntryClick = (entryId: string) => {
-    if (disabled || suppressClickRef.current) {
+    if (disabled || suppressClickRef.current || scrollIntentRef.current) {
       suppressClickRef.current = false;
+      scrollIntentRef.current = false;
       return;
     }
 
@@ -223,7 +215,7 @@ export default function HistoryPanel({
           onClick={() => handleEntryClick(entry.id)}
           onContextMenu={(e) => handleEntryContextMenu(entry, e)}
           disabled={disabled}
-          className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-none [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
+          className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-pan-y [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
             isActive
               ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
               : isPinned
