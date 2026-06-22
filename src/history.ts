@@ -24,8 +24,6 @@ export type HistoryStore = {
   entries: HistoryEntry[];
 };
 
-import { normalizeCategory } from './categories';
-
 const HISTORY_KEY = 'tdah-optimizer-history';
 const LEGACY_SESSION_KEY = 'tdah-optimizer-session';
 const MAX_ENTRIES = 30;
@@ -172,7 +170,6 @@ export function createEntry(
   const entry: HistoryEntry = {
     id: generateId(),
     title: session.data?.title || 'Mapa sin título',
-    category: normalizeCategory(session.data?.category),
     createdAt: now,
     updatedAt: now,
     sourceType,
@@ -197,7 +194,6 @@ export function updateActiveSession(
       ? {
           ...entry,
           title: session.data?.title || entry.title,
-          category: normalizeCategory(session.data?.category ?? entry.category),
           updatedAt: now,
           session,
         }

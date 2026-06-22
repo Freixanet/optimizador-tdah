@@ -11,7 +11,6 @@ import {
   PinOff,
   X,
 } from 'lucide-react';
-import { CATEGORIES, DEFAULT_CATEGORY, normalizeCategory } from '../categories';
 import {
   formatRelativeDate,
   type HistoryEntry,
@@ -42,23 +41,8 @@ const SOURCE_ICONS: Record<SourceType, typeof FileText> = {
   pdf: File,
 };
 
-const GROUPS_STORAGE_KEY = 'tdah-history-groups';
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
-
-function loadExpandedGroups(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(GROUPS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveExpandedGroups(groups: Record<string, boolean>) {
-  localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
-}
 
 function sortPinnedEntries(entries: HistoryEntry[]) {
   return [...entries].sort(
@@ -75,7 +59,6 @@ export default function HistoryPanel({
   onTogglePin,
 }: HistoryPanelProps) {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(loadExpandedGroups);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -89,32 +72,13 @@ export default function HistoryPanel({
     [entries]
   );
 
-  const groupedEntries = useMemo(() => {
-    const groups = new Map<string, HistoryEntry[]>();
-
-    for (const entry of entries) {
-      const category = normalizeCategory(entry.category);
-      const list = groups.get(category) ?? [];
-      list.push(entry);
-      groups.set(category, list);
-    }
-
-    for (const list of groups.values()) {
-      list.sort((a, b) => b.updatedAt - a.updatedAt);
-    }
-
-    const ordered: { category: string; entries: HistoryEntry[] }[] = [];
-    for (const category of CATEGORIES) {
-      const list = groups.get(category);
-      if (list?.length) ordered.push({ category, entries: list });
-    }
-
-    return ordered;
-  }, [entries]);
-
-  useEffect(() => {
-    saveExpandedGroups(expandedGroups);
-  }, [expandedGroups]);
+  const recentEntries = useMemo(
+    () =>
+      [...entries]
+        .filter((entry) => !entry.pinned)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [entries]
+  );
 
   useEffect(() => {
     if (!actionMenu) return;
@@ -237,15 +201,6 @@ export default function HistoryPanel({
     openActionMenu(entry, e.currentTarget);
   };
 
-  const toggleGroup = (category: string) => {
-    setExpandedGroups((prev) => ({
-      ...prev,
-      [category]: prev[category] === false,
-    }));
-  };
-
-  const isGroupExpanded = (category: string) => expandedGroups[category] !== false;
-
   const handleTogglePinFromMenu = () => {
     if (!actionMenu) return;
     onTogglePin(actionMenu.entry.id);
@@ -334,33 +289,9 @@ export default function HistoryPanel({
                 </div>
               )}
 
-              {groupedEntries.map(({ category, entries: groupEntries }) => {
-                const expanded = isGroupExpanded(category);
-
-                return (
-                  <div key={category}>
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(category)}
-                      className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-                      aria-expanded={expanded}
-                    >
-                      <ChevronDown
-                        className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${expanded ? '' : '-rotate-90'}`}
-                      />
-                      <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400 flex-1 truncate">
-                        {category}
-                      </span>
-                    </button>
-
-                    {expanded && (
-                      <ul className="flex flex-col gap-1 mt-1">
-                        {groupEntries.map(renderEntryItem)}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
+              {recentEntries.length > 0 && (
+                <ul className="flex flex-col gap-1">{recentEntries.map(renderEntryItem)}</ul>
+              )}
             </div>
           )}
         </>
@@ -410,5 +341,3 @@ export default function HistoryPanel({
     </div>
   );
 }
-
-export { DEFAULT_CATEGORY };

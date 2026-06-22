@@ -4,7 +4,6 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { fetchTranscript } from "youtube-transcript";
-import { CATEGORIES, normalizeCategory } from "./src/categories";
 import { extractYouTubeVideoId } from "./youtube";
 
 type AuthenticatedRequest = express.Request & { userId?: string };
@@ -120,10 +119,6 @@ const schema = {
   type: Type.OBJECT,
   properties: {
     title: { type: Type.STRING },
-    category: {
-      type: Type.STRING,
-      description: `Categoría del contenido. DEBE ser EXACTAMENTE una de: ${CATEGORIES.join(", ")}. Si ninguna encaja, usa "Otros".`,
-    },
     coreIdea: { type: Type.STRING, description: "La idea principal o el 'Núcleo' absoluto del contenido. (DEBE ser corta y concisa, alrededor de 10 a 15 palabras, 1 sola frase impactante)" },
     coreSupport: { type: Type.STRING },
     tldr: {
@@ -174,7 +169,7 @@ const schema = {
       }
     }
   },
-  required: ["title", "category", "coreIdea", "coreSupport", "tldr", "steps"]
+  required: ["title", "coreIdea", "coreSupport", "tldr", "steps"]
 };
 
 const SYSTEM_PROMPT = `Eres un "Optimizador TDAH". Tu objetivo es extraer, destilar y estructurar el conocimiento de CUALQUIER texto, nota caótica o transcripción cruda de YouTube.
@@ -189,7 +184,6 @@ REGLAS DE CONSISTENCIA (MUY IMPORTANTES):
 5. NÚMERO DE PASOS ADAPTATIVO: El número de pasos DEBE escalar con la extensión y complejidad del contenido. NO hay límite máximo: un texto corto puede necesitar 3-5 pasos, un artículo largo 6-12, y un libro o documento muy extenso puede requerir 15, 25 o más. La regla es: un paso por cada idea o sección principal con entidad propia. No fragmentes en exceso (no crees un paso por cada frase) ni comprimas de más (no metas temas independientes en un mismo paso). Cubre TODO el contenido relevante, sin dejar fuera secciones importantes por querer acortar.
 6. CAMPO "time" OBLIGATORIO: CADA paso DEBE incluir "time" con el formato exacto "~N min" (por ejemplo "~3 min"), estimando el tiempo de lectura del paso. NUNCA uses horarios tipo reloj (nada de "08:00 - 09:00").
 7. DETERMINISMO: Sé consistente. Ante el mismo texto, produce la misma cantidad de pasos y la misma estructura.
-8. CATEGORÍA OBLIGATORIA: Asigna SIEMPRE el campo "category" eligiendo EXACTAMENTE una de esta lista: ${CATEGORIES.join(", ")}. Si ninguna encaja con el contenido, usa "Otros".
 
 ESTRUCTURA DE TU RESPUESTA:
 Debes responder ÚNICAMENTE con un objeto JSON válido que cumpla esta estructura exacta.`;
@@ -462,7 +456,6 @@ async function startServer() {
       }
 
       const parsedData = JSON.parse(jsonText);
-      parsedData.category = normalizeCategory(parsedData.category);
       parsedData.modelUsed = usedModel;
       res.json(parsedData);
     } catch (err: any) {
