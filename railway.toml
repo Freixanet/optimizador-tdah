@@ -1,7 +1,6 @@
 [build]
 builder = "NIXPACKS"
-# npm ci on Linux can skip @tailwindcss/oxide optional native bindings
-buildCommand = "npm install --include=optional && npm run build"
+buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm run start"
