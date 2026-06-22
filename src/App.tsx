@@ -257,6 +257,13 @@ export default function App() {
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [mobileViewport, setMobileViewport] = useState(() => ({
+    top: 0,
+    left: 0,
+    width: typeof window !== 'undefined' ? window.innerWidth : 0,
+    height: typeof window !== 'undefined' ? window.innerHeight : 0,
+  }));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -351,29 +358,43 @@ export default function App() {
     document.body.scrollTop = 0;
   }, []);
 
-  const scrollComposerIntoView = useCallback(() => {
-    requestAnimationFrame(() => {
-      textareaRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' });
-    });
-  }, []);
-
   React.useEffect(() => {
-    if (appState !== 'input') return;
+    if (appState !== 'input' || isDesktop) return;
+
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    body.style.overflow = 'hidden';
+    resetInputViewportScroll();
 
     const viewport = window.visualViewport;
-    if (!viewport) return;
-
-    let prevHeight = viewport.height;
-    const onViewportChange = () => {
-      if (viewport.height > prevHeight + 80) {
+    if (!viewport) {
+      return () => {
+        body.style.overflow = prevOverflow;
         resetInputViewportScroll();
-      }
-      prevHeight = viewport.height;
+      };
+    }
+
+    const syncMobileViewport = () => {
+      setMobileViewport({
+        top: viewport.offsetTop,
+        left: viewport.offsetLeft,
+        width: viewport.width,
+        height: viewport.height,
+      });
     };
 
-    viewport.addEventListener('resize', onViewportChange);
-    return () => viewport.removeEventListener('resize', onViewportChange);
-  }, [appState, resetInputViewportScroll]);
+    syncMobileViewport();
+    viewport.addEventListener('resize', syncMobileViewport);
+    viewport.addEventListener('scroll', syncMobileViewport);
+
+    return () => {
+      viewport.removeEventListener('resize', syncMobileViewport);
+      viewport.removeEventListener('scroll', syncMobileViewport);
+      body.style.overflow = prevOverflow;
+      setIsComposerFocused(false);
+      resetInputViewportScroll();
+    };
+  }, [appState, isDesktop, resetInputViewportScroll]);
 
   React.useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1742,7 +1763,21 @@ export default function App() {
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
-      <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas">
+      <div
+        className={`relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas lg:min-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-lg:fixed max-lg:z-10 max-lg:flex max-lg:flex-col max-lg:overflow-hidden max-lg:bg-app-canvas${
+          reduceMotion ? '' : ' max-lg:transition-[top,height,width] duration-150 ease-out'
+        }`}
+        style={
+          isDesktop
+            ? undefined
+            : {
+                top: mobileViewport.top,
+                left: mobileViewport.left,
+                width: mobileViewport.width,
+                height: mobileViewport.height,
+              }
+        }
+      >
         <button
           type="button"
           onClick={toggleSidebar}
@@ -1752,7 +1787,12 @@ export default function App() {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
+        <div
+          className={`flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8 overflow-hidden${
+            reduceMotion ? '' : ' transition-opacity duration-200 ease-out'
+          } ${isComposerFocused ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          aria-hidden={isComposerFocused}
+        >
           <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
               <AppIcon
@@ -1825,7 +1865,8 @@ export default function App() {
                     setInputText(e.target.value);
                     adjustComposerHeight(e.target);
                   }}
-                  onFocus={scrollComposerIntoView}
+                  onFocus={() => setIsComposerFocused(true)}
+                  onBlur={() => setIsComposerFocused(false)}
                   rows={1}
                   placeholder={composerPlaceholder}
                   className="w-full min-h-[52px] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-relaxed"
@@ -1981,7 +2022,14 @@ export default function App() {
     >
       {renderSidebar()}
 
-      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas">
+      <main
+        className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas"
+        style={
+          appState === 'input' && !isDesktop
+            ? { minHeight: mobileViewport.height }
+            : undefined
+        }
+      >
         {appState === 'input' && renderInputContent()}
 
         {appState === 'loading' && renderLoadingContent()}
