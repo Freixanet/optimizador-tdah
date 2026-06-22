@@ -257,13 +257,7 @@ export default function App() {
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [isComposerFocused, setIsComposerFocused] = useState(false);
-  const [mobileViewport, setMobileViewport] = useState(() => ({
-    top: 0,
-    left: 0,
-    width: typeof window !== 'undefined' ? window.innerWidth : 0,
-    height: typeof window !== 'undefined' ? window.innerHeight : 0,
-  }));
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -352,49 +346,38 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior });
   }, []);
 
-  const resetInputViewportScroll = useCallback(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  }, []);
-
   React.useEffect(() => {
-    if (appState !== 'input' || isDesktop) return;
-
-    const body = document.body;
-    const prevOverflow = body.style.overflow;
-    body.style.overflow = 'hidden';
-    resetInputViewportScroll();
-
-    const viewport = window.visualViewport;
-    if (!viewport) {
-      return () => {
-        body.style.overflow = prevOverflow;
-        resetInputViewportScroll();
-      };
+    if (appState !== 'input' || isDesktop) {
+      setKeyboardInset(0);
+      return;
     }
 
-    const syncMobileViewport = () => {
-      setMobileViewport({
-        top: viewport.offsetTop,
-        left: viewport.offsetLeft,
-        width: viewport.width,
-        height: viewport.height,
-      });
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    let prevHeight = viewport.height;
+    const syncKeyboardInset = () => {
+      const inset = Math.max(
+        0,
+        Math.round(window.innerHeight - viewport.height - viewport.offsetTop)
+      );
+      setKeyboardInset(inset);
+      if (viewport.height > prevHeight + 80) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
+      prevHeight = viewport.height;
     };
 
-    syncMobileViewport();
-    viewport.addEventListener('resize', syncMobileViewport);
-    viewport.addEventListener('scroll', syncMobileViewport);
+    syncKeyboardInset();
+    viewport.addEventListener('resize', syncKeyboardInset);
+    viewport.addEventListener('scroll', syncKeyboardInset);
 
     return () => {
-      viewport.removeEventListener('resize', syncMobileViewport);
-      viewport.removeEventListener('scroll', syncMobileViewport);
-      body.style.overflow = prevOverflow;
-      setIsComposerFocused(false);
-      resetInputViewportScroll();
+      viewport.removeEventListener('resize', syncKeyboardInset);
+      viewport.removeEventListener('scroll', syncKeyboardInset);
+      setKeyboardInset(0);
     };
-  }, [appState, isDesktop, resetInputViewportScroll]);
+  }, [appState, isDesktop]);
 
   React.useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1763,21 +1746,7 @@ export default function App() {
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
-      <div
-        className={`relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas lg:min-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-lg:fixed max-lg:z-10 max-lg:flex max-lg:flex-col max-lg:overflow-hidden max-lg:bg-app-canvas${
-          reduceMotion ? '' : ' max-lg:transition-[top,height,width] duration-150 ease-out'
-        }`}
-        style={
-          isDesktop
-            ? undefined
-            : {
-                top: mobileViewport.top,
-                left: mobileViewport.left,
-                width: mobileViewport.width,
-                height: mobileViewport.height,
-              }
-        }
-      >
+      <div className="relative flex-1 min-h-0 flex flex-col bg-app-canvas">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -1787,12 +1756,7 @@ export default function App() {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div
-          className={`flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8 overflow-hidden${
-            reduceMotion ? '' : ' transition-opacity duration-200 ease-out'
-          } ${isComposerFocused ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-          aria-hidden={isComposerFocused}
-        >
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8 overflow-hidden">
           <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
               <AppIcon
@@ -1819,7 +1783,16 @@ export default function App() {
           )}
         </div>
 
-        <div className="shrink-0 px-4 sm:px-8 bg-app-canvas pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div
+          className="shrink-0 px-4 sm:px-8 bg-app-canvas"
+          style={
+            isDesktop
+              ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }
+              : keyboardInset > 0
+                ? { marginBottom: keyboardInset, paddingBottom: '0.75rem' }
+                : { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }
+          }
+        >
           <div className="max-w-3xl mx-auto">
             <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
               {uploadedFile && (
@@ -1865,8 +1838,6 @@ export default function App() {
                     setInputText(e.target.value);
                     adjustComposerHeight(e.target);
                   }}
-                  onFocus={() => setIsComposerFocused(true)}
-                  onBlur={() => setIsComposerFocused(false)}
                   rows={1}
                   placeholder={composerPlaceholder}
                   className="w-full min-h-[52px] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-relaxed"
@@ -2022,14 +1993,7 @@ export default function App() {
     >
       {renderSidebar()}
 
-      <main
-        className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas"
-        style={
-          appState === 'input' && !isDesktop
-            ? { minHeight: mobileViewport.height }
-            : undefined
-        }
-      >
+      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas">
         {appState === 'input' && renderInputContent()}
 
         {appState === 'loading' && renderLoadingContent()}
