@@ -88,6 +88,13 @@
     text-wrap: pretty;
   }
 
+  .home-hero-copy,
+  .home-hero-copy * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
   .animate-atom-rotate {
     animation: atom-rotate 16s linear infinite;
     transform-origin: center;

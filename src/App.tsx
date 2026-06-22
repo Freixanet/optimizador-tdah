@@ -1738,7 +1738,10 @@ export default function App() {
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
-          <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
+          <div
+            className="home-hero-copy text-center space-y-2 sm:space-y-3 max-w-lg select-none"
+            onSelectStart={(e) => e.preventDefault()}
+          >
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
               <AppIcon
                 className={`w-10 h-10 sm:w-12 sm:h-12${reduceMotion ? '' : ' animate-atom-rotate'}`}
