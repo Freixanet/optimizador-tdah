@@ -1214,10 +1214,10 @@ export default function App() {
     <div className="hidden lg:flex flex-col h-full w-14 shrink-0 items-center py-5 gap-1">
       <button
         type="button"
-        onClick={handleNewMap}
+        onClick={toggleSidebar}
         className="p-2 rounded-xl text-[#1A1A1A] dark:text-[#EDEDED] hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-        title="Ir a inicio"
-        aria-label="Ir a inicio"
+        title="Abrir panel lateral"
+        aria-label="Abrir panel lateral"
       >
         <AppIcon className="w-7 h-7" />
       </button>
@@ -1272,7 +1272,7 @@ export default function App() {
       className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-app-canvas border-r border-neutral-200 dark:border-white/5 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
         isMapOpen
           ? 'translate-x-0 w-full lg:w-72 h-dvh flex flex-col overflow-hidden'
-          : '-translate-x-full lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
+          : '-translate-x-full pointer-events-none lg:pointer-events-auto lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
       }`}
       aria-hidden={!isMapOpen && !isDesktop}
     >
