@@ -257,6 +257,7 @@ export default function App() {
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [composerBottomOffset, setComposerBottomOffset] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -344,6 +345,60 @@ export default function App() {
   const scrollPageToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
     window.scrollTo({ top: 0, left: 0, behavior });
   }, []);
+
+  const resetInputViewportScroll = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
+
+  React.useEffect(() => {
+    if (appState !== 'input') {
+      setComposerBottomOffset(0);
+      return;
+    }
+
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    resetInputViewportScroll();
+
+    const viewport = window.visualViewport;
+    if (!viewport) {
+      return () => {
+        html.style.overflow = prevHtmlOverflow;
+        body.style.overflow = prevBodyOverflow;
+        resetInputViewportScroll();
+      };
+    }
+
+    const syncComposerWithViewport = () => {
+      const keyboardInset = Math.max(
+        0,
+        Math.round(window.innerHeight - viewport.height - viewport.offsetTop)
+      );
+      setComposerBottomOffset(keyboardInset);
+      if (keyboardInset === 0) {
+        resetInputViewportScroll();
+      }
+    };
+
+    syncComposerWithViewport();
+    viewport.addEventListener('resize', syncComposerWithViewport);
+    viewport.addEventListener('scroll', syncComposerWithViewport);
+
+    return () => {
+      viewport.removeEventListener('resize', syncComposerWithViewport);
+      viewport.removeEventListener('scroll', syncComposerWithViewport);
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      setComposerBottomOffset(0);
+      resetInputViewportScroll();
+    };
+  }, [appState, resetInputViewportScroll]);
 
   React.useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1722,7 +1777,8 @@ export default function App() {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
+          <div className="min-h-full flex flex-col items-center justify-center px-4 sm:px-8 pb-[calc(9rem+env(safe-area-inset-bottom))] lg:pb-8">
           <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
               <AppIcon
@@ -1747,10 +1803,21 @@ export default function App() {
               <p className="font-medium text-sm">{error}</p>
             </div>
           )}
+          </div>
         </div>
 
-        <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
-          <div className="max-w-3xl mx-auto">
+        <div
+          className="fixed inset-x-0 z-20 px-4 sm:px-8 bg-app-canvas lg:static lg:z-auto lg:shrink-0"
+          style={isDesktop ? undefined : { bottom: composerBottomOffset }}
+        >
+          <div
+            className="max-w-3xl mx-auto"
+            style={
+              isDesktop || composerBottomOffset > 0
+                ? undefined
+                : { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }
+            }
+          >
             <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
               {uploadedFile && (
                 <div className="flex items-center gap-2 px-3 pt-3">
@@ -1795,6 +1862,7 @@ export default function App() {
                     setInputText(e.target.value);
                     adjustComposerHeight(e.target);
                   }}
+                  onBlur={resetInputViewportScroll}
                   rows={1}
                   placeholder={composerPlaceholder}
                   className="w-full min-h-[52px] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-relaxed"
@@ -1944,7 +2012,11 @@ export default function App() {
 
   return (
     <div
-      className="min-h-dvh min-h-[100dvh] bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      className={`min-h-dvh min-h-[100dvh] bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)] ${
+        appState === 'input'
+          ? 'h-dvh max-h-dvh overflow-hidden lg:pb-[env(safe-area-inset-bottom)]'
+          : 'pb-[env(safe-area-inset-bottom)]'
+      }`}
       onTouchStart={handleSwipeTouchStart}
       onTouchEnd={handleSwipeTouchEnd}
     >
