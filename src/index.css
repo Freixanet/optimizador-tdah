@@ -3,6 +3,8 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-app-canvas: #fafafa;
+  --color-app-surface: #fafafa;
 }
 
 @variant dark (&:where(.dark, .dark *));
@@ -10,6 +12,32 @@
 @layer base {
   html {
     scroll-padding-top: 7rem;
+    color-scheme: light;
+    background-color: var(--color-app-canvas);
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --color-app-canvas: #121212;
+    --color-app-surface: #1c1c1c;
+    background-color: var(--color-app-canvas);
+  }
+
+  body {
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    background-color: var(--color-app-canvas);
+  }
+
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    background-color: var(--color-app-canvas);
   }
 
   *,

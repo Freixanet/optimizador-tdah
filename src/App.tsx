@@ -490,6 +490,11 @@ export default function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+    const themeColor = theme === 'dark' ? '#121212' : '#FAFAFA';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
+    document
+      .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+      ?.setAttribute('content', theme === 'dark' ? 'black-translucent' : 'default');
   }, [theme]);
 
   React.useEffect(() => {
@@ -1218,13 +1223,13 @@ export default function App() {
       >
         <div
           className={`relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm ${
-            cloudUser ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-[#1C1C1C]' : ''
+            cloudUser ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-app-canvas' : ''
           }`}
         >
           <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
           {cloudUser && (
             <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-[#1C1C1C]"
+              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-app-canvas"
               aria-hidden="true"
             />
           )}
@@ -1286,7 +1291,7 @@ export default function App() {
 
   const renderSidebar = () => (
     <aside
-      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-[#1C1C1C] border-r border-neutral-200 dark:border-white/5 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
+      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-app-canvas border-r border-neutral-200 dark:border-white/5 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
         isMapOpen
           ? 'translate-x-0 w-full lg:w-72 h-dvh flex flex-col overflow-hidden'
           : '-translate-x-full lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
@@ -1375,7 +1380,7 @@ export default function App() {
           />
         </div>
 
-        <div className="shrink-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 bg-neutral-50 dark:bg-[#1C1C1C]">
+        <div className="shrink-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 bg-neutral-50 dark:bg-app-canvas">
           <div className="flex items-center justify-between gap-3">
             {renderProfileTrigger('expanded')}
             <button
@@ -1575,7 +1580,7 @@ export default function App() {
 
     if (currentStep === 0) {
       return (
-        <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-app-canvas px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto">
             <button
               onClick={() => handleStepClick(1)}
@@ -1591,7 +1596,7 @@ export default function App() {
     const stepIndex = currentStep;
 
     return (
-      <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-app-canvas px-4 sm:px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="max-w-3xl mx-auto flex gap-4">
           <button
             onClick={() => handleStepClick(stepIndex - 1)}
@@ -1661,7 +1666,7 @@ export default function App() {
 
   const renderProgressBar = (sticky = false) => (
     <div
-      className={`shrink-0 bg-neutral-50 dark:bg-[#1C1C1C] border-b border-neutral-200 dark:border-white/5${sticky ? ' sticky top-0 z-40' : ''}`}
+      className={`shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5 pt-[env(safe-area-inset-top)]${sticky ? ' sticky top-0 z-40' : ''}`}
       role="region"
       aria-label="Progreso de lectura"
     >
@@ -1707,11 +1712,11 @@ export default function App() {
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
-      <div className="relative h-dvh overflow-hidden flex flex-col">
+      <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas">
         <button
           type="button"
           onClick={toggleSidebar}
-          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 inline-flex lg:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+          className="absolute left-4 top-4 z-10 inline-flex lg:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >
@@ -1744,9 +1749,9 @@ export default function App() {
           )}
         </div>
 
-        <div className="shrink-0 px-4 sm:px-8 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
           <div className="max-w-3xl mx-auto">
-            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-[#1C1C1C] shadow-sm dark:shadow-none">
+            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
               {uploadedFile && (
                 <div className="flex items-center gap-2 px-3 pt-3">
                   {uploadedFile.isImage && uploadedFile.previewUrl ? (
@@ -1939,13 +1944,13 @@ export default function App() {
 
   return (
     <div
-      className="min-h-dvh bg-[#FAFAFA] dark:bg-[#121212] flex flex-col lg:flex-row transition-colors duration-300"
+      className="min-h-dvh min-h-[100dvh] bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
       onTouchStart={handleSwipeTouchStart}
       onTouchEnd={handleSwipeTouchEnd}
     >
       {renderSidebar()}
 
-      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col">
+      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas">
         {appState === 'input' && renderInputContent()}
 
         {appState === 'loading' && renderLoadingContent()}

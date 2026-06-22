@@ -178,7 +178,7 @@ export default function LoadingState({ className = '' }: LoadingStateProps) {
             <ShimmerBlock className="h-3 w-24" reduceMotion={reduceMotion} shimmerDelay={0.15} />
           </div>
 
-          <div className="rounded-2xl border border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] p-6 sm:p-8 space-y-4">
+          <div className="rounded-2xl border border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-app-canvas p-6 sm:p-8 space-y-4">
             <ShimmerBlock className="h-8 w-[90%]" reduceMotion={reduceMotion} shimmerDelay={0.3} />
             <ShimmerBlock className="h-6 w-[70%]" reduceMotion={reduceMotion} shimmerDelay={0.45} />
           </div>
@@ -219,7 +219,7 @@ export default function LoadingState({ className = '' }: LoadingStateProps) {
           {Array.from({ length: 3 }, (_, i) => (
             <div key={i}>
               <StaggerReveal index={i} reduceMotion={reduceMotion}>
-              <div className="rounded-xl border border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-[#1C1C1C] p-6 sm:p-8">
+              <div className="rounded-xl border border-neutral-200 dark:border-white/5 bg-neutral-50 dark:bg-app-canvas p-6 sm:p-8">
                 <div className="flex flex-wrap items-center gap-3 mb-6">
                   <ShimmerBlock
                     className="h-5 w-8 rounded-full"
