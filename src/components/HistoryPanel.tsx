@@ -210,6 +210,7 @@ export default function HistoryPanel({
   const renderEntryItem = (entry: HistoryEntry) => {
     const Icon = SOURCE_ICONS[entry.sourceType] || FileText;
     const isActive = entry.id === activeId;
+    const isPinned = Boolean(entry.pinned);
 
     return (
       <li key={entry.id} className="group relative">
@@ -223,14 +224,32 @@ export default function HistoryPanel({
           onContextMenu={(e) => handleEntryContextMenu(entry, e)}
           disabled={disabled}
           className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-none [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
+            isPinned ? 'border-l-2 border-indigo-500 dark:border-indigo-400 pl-2.5' : ''
+          } ${
             isActive
               ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
-              : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'
+              : isPinned
+                ? 'bg-indigo-50/90 text-neutral-700 dark:bg-indigo-500/10 dark:text-neutral-200 hover:bg-indigo-100/80 dark:hover:bg-indigo-500/15'
+                : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'
           } ${actionMenu?.entry.id === entry.id ? 'ring-2 ring-indigo-400/40 dark:ring-indigo-500/30' : ''}`}
         >
-          <Icon className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
+          {isPinned ? (
+            <Pin
+              className="w-4 h-4 shrink-0 mt-0.5 text-indigo-600 dark:text-indigo-400 fill-indigo-500/15 dark:fill-indigo-400/15"
+              aria-hidden
+            />
+          ) : (
+            <Icon className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
+          )}
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold truncate">{entry.title}</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="text-sm font-semibold truncate">{entry.title}</span>
+              {isPinned && (
+                <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                  Fijado
+                </span>
+              )}
+            </span>
             <span className="block text-xs opacity-70 mt-0.5">
               {formatRelativeDate(entry.updatedAt)}
             </span>
@@ -290,7 +309,16 @@ export default function HistoryPanel({
               )}
 
               {recentEntries.length > 0 && (
-                <ul className="flex flex-col gap-1">{recentEntries.map(renderEntryItem)}</ul>
+                <div>
+                  {pinnedEntries.length > 0 && (
+                    <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-1">
+                      <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
+                        Recientes
+                      </span>
+                    </div>
+                  )}
+                  <ul className="flex flex-col gap-1">{recentEntries.map(renderEntryItem)}</ul>
+                </div>
               )}
             </div>
           )}
