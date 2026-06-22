@@ -47,6 +47,7 @@ import {
   type SourceType,
   type HistoryEntry,
 } from './history';
+import { isYouTubeUrl } from '@/youtube';
 import {
   deleteCloudHistoryEntry,
   migrateLocalHistory,
@@ -144,6 +145,7 @@ function resolveSourceType(text: string, uploadedFile: UploadedFile | null): Sou
   if (uploadedFile?.isPdf) return 'pdf';
   if (uploadedFile) return 'file';
   const trimmed = text.trim();
+  if (isYouTubeUrl(trimmed)) return 'youtube';
   if (isSingleUrl(trimmed)) return 'link';
   if (/\[\d{1,2}:\d{2}/.test(trimmed)) return 'youtube';
   return 'text';
@@ -715,7 +717,13 @@ export default function App() {
         };
       } else {
         const trimmed = inputText.trim();
-        if (isSingleUrl(trimmed)) {
+        if (isYouTubeUrl(trimmed)) {
+          body = {
+            text: trimmed,
+            type: 'youtube',
+            preferredModel: modelPreference,
+          };
+        } else if (isSingleUrl(trimmed)) {
           body = {
             text: trimmed,
             type: 'link',
@@ -1715,7 +1723,7 @@ export default function App() {
       ? 'Añade una indicación (opcional)…'
       : uploadedFile
         ? 'Archivo adjunto listo para transformar'
-        : 'Pega texto, un enlace o una transcripción…';
+        : 'Pega texto, un enlace de YouTube o una transcripción…';
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (

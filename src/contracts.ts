@@ -21,7 +21,7 @@ export type MapRecord = {
 
 export type TransformRequest = {
   text?: string;
-  type: 'text' | 'link' | 'pdf' | 'image';
+  type: 'text' | 'link' | 'youtube' | 'pdf' | 'image';
   fileData?: string;
   mimeType?: string;
   preferredModel?: string;

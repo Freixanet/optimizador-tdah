@@ -3,7 +3,9 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { fetchTranscript } from "youtube-transcript";
 import { CATEGORIES, normalizeCategory } from "./src/categories";
+import { extractYouTubeVideoId } from "./youtube";
 
 type AuthenticatedRequest = express.Request & { userId?: string };
 
@@ -262,6 +264,40 @@ async function fetchUrlContent(url: string): Promise<string> {
   }
 }
 
+async function fetchYouTubeTranscript(url: string): Promise<string> {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) {
+    throw new Error("URL de YouTube inválida. Usa un enlace completo al video.");
+  }
+
+  let segments;
+  try {
+    segments = await fetchTranscript(url, { lang: "es" });
+  } catch {
+    try {
+      segments = await fetchTranscript(url);
+    } catch {
+      throw new Error(
+        "Este video no tiene subtítulos disponibles. Copia la transcripción de YouTube y pégala aquí."
+      );
+    }
+  }
+
+  const text = segments
+    .map((segment) => segment.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (text.length < 50) {
+    throw new Error(
+      "Los subtítulos de este video son demasiado cortos para generar un mapa útil."
+    );
+  }
+
+  return text;
+}
+
 function describeGeminiError(err: any): { statusCode: number; errorMessage: string } {
   let parsed: any = null;
   if (typeof err?.message === "string") {
@@ -389,7 +425,9 @@ async function startServer() {
         ];
       } else {
         let contentText = text as string;
-        if (type === "link") {
+        if (type === "youtube") {
+          contentText = await fetchYouTubeTranscript(text);
+        } else if (type === "link") {
           contentText = await fetchUrlContent(text);
         }
         contents = `Extrae el conocimiento de este texto y aplica el framework paso a paso:\n\n${contentText}`;
