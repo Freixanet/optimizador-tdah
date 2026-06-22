@@ -9,7 +9,7 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/setup-supabase.sh apply --url URL --anon-key KEY [--service-key KEY]
-  ./scripts/setup-supabase.sh write-env --url URL --anon-key KEY
+  ./scripts/setup-supabase.sh write-env --url URL --anon-key KEY [--app-url URL]
 
 Examples:
   ./scripts/setup-supabase.sh write-env \
@@ -34,11 +34,12 @@ require_cmd() {
 }
 
 write_env() {
-  local url="" anon=""
+  local url="" anon="" app_url="http://localhost:3000"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --url) url="$2"; shift 2 ;;
       --anon-key) anon="$2"; shift 2 ;;
+      --app-url) app_url="$2"; shift 2 ;;
       *) echo "Opción desconocida: $1" >&2; exit 1 ;;
     esac
   done
@@ -62,7 +63,8 @@ write_env() {
   upsert_env "SUPABASE_ANON_KEY" "$anon"
   upsert_env "VITE_SUPABASE_URL" "$url"
   upsert_env "VITE_SUPABASE_ANON_KEY" "$anon"
-  upsert_env "ALLOWED_ORIGINS" "http://localhost:3000,http://127.0.0.1:3000"
+  upsert_env "APP_URL" "$app_url"
+  upsert_env "ALLOWED_ORIGINS" "${app_url},http://localhost:3000,http://127.0.0.1:3000"
 
   echo "Variables Supabase escritas en .env"
   echo "Reinicia npm run dev para aplicar los cambios."

@@ -25,9 +25,20 @@ This document tracks the reversible native migration without replacing the web a
 
 1. Apply the Supabase migration to a staging project.
 2. Configure OAuth redirect URLs for web, iOS, and Android.
-3. Set Railway env vars from [`.env.staging.example`](../.env.staging.example).
-4. Verify: web without Supabase, web with Supabase, OAuth, RLS isolation, local migration, offline cache on iOS/Android.
-5. Do not publish to App Store, Play Store, Supabase prod, or Railway prod until explicitly approved.
+3. Deploy to Railway (see below).
+4. Set Railway env vars from [`.env.staging.example`](../.env.staging.example) or `./scripts/railway-env.sh`.
+5. Verify: web without Supabase, web with Supabase, OAuth, RLS isolation, local migration, offline cache on iOS/Android.
+6. Do not publish to App Store, Play Store, Supabase prod, or Railway prod until explicitly approved.
+
+## Deploy to Railway (staging)
+
+1. Push branch `codex/native-foundation-20260621` to GitHub.
+2. [railway.app](https://railway.app) → New Project → Deploy from GitHub → repo `Freixanet/optimizador-tdah`.
+3. Variables: run `./scripts/railway-env.sh` locally and paste into Railway. **VITE_*** must be set before the first build.
+4. After deploy, copy the `*.up.railway.app` URL and run:
+   `./scripts/setup-supabase.sh write-env --url https://oxvfiyuljzchdjotyshl.supabase.co --anon-key YOUR_ANON --app-url https://YOUR_APP.up.railway.app`
+   Redeploy on Railway so the frontend rebuilds with the correct `APP_URL`.
+5. Supabase → Authentication → URL Configuration: set Site URL to the Railway URL and add it to Redirect URLs.
 
 ## Local commands
 
