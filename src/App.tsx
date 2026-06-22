@@ -257,7 +257,6 @@ export default function App() {
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [keyboardInset, setKeyboardInset] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -345,39 +344,6 @@ export default function App() {
   const scrollPageToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
     window.scrollTo({ top: 0, left: 0, behavior });
   }, []);
-
-  React.useEffect(() => {
-    if (appState !== 'input' || isDesktop) {
-      setKeyboardInset(0);
-      return;
-    }
-
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-
-    let prevHeight = viewport.height;
-    const syncKeyboardInset = () => {
-      const inset = Math.max(
-        0,
-        Math.round(window.innerHeight - viewport.height - viewport.offsetTop)
-      );
-      setKeyboardInset(inset);
-      if (viewport.height > prevHeight + 80) {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      }
-      prevHeight = viewport.height;
-    };
-
-    syncKeyboardInset();
-    viewport.addEventListener('resize', syncKeyboardInset);
-    viewport.addEventListener('scroll', syncKeyboardInset);
-
-    return () => {
-      viewport.removeEventListener('resize', syncKeyboardInset);
-      viewport.removeEventListener('scroll', syncKeyboardInset);
-      setKeyboardInset(0);
-    };
-  }, [appState, isDesktop]);
 
   React.useEffect(() => {
     if (!profileMenuOpen) return;
@@ -1746,7 +1712,7 @@ export default function App() {
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
-      <div className="relative flex-1 min-h-0 flex flex-col bg-app-canvas">
+      <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -1756,7 +1722,7 @@ export default function App() {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8 overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
           <div className="text-center space-y-2 sm:space-y-3 max-w-lg">
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
               <AppIcon
@@ -1783,16 +1749,7 @@ export default function App() {
           )}
         </div>
 
-        <div
-          className="shrink-0 px-4 sm:px-8 bg-app-canvas"
-          style={
-            isDesktop
-              ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }
-              : keyboardInset > 0
-                ? { marginBottom: keyboardInset, paddingBottom: '0.75rem' }
-                : { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }
-          }
-        >
+        <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
           <div className="max-w-3xl mx-auto">
             <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
               {uploadedFile && (
