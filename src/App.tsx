@@ -1730,7 +1730,7 @@ export default function App() {
               />
             </div>
             <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
-              Qué me cuentas?
+              ¿Qué me cuentas?
             </h1>
             <p className="text-sm sm:text-lg text-neutral-600 dark:text-neutral-400 leading-relaxed">
               Convierte{' '}

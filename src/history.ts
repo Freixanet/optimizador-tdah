@@ -122,16 +122,23 @@ function persist(store: HistoryStore): boolean {
   }
 }
 
+function resolveActiveId(
+  stored: string | null | undefined,
+  entries: HistoryEntry[]
+): string | null {
+  if (stored === null) return null;
+  if (stored && entries.some((entry) => entry.id === stored)) return stored;
+  if (stored) return null;
+  return entries[0]?.id ?? null;
+}
+
 export function loadHistory(): HistoryStore {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HistoryStore;
       const entries = (parsed.entries || []).filter(isValidEntry);
-      const activeId =
-        parsed.activeId && entries.some((e) => e.id === parsed.activeId)
-          ? parsed.activeId
-          : entries[0]?.id ?? null;
+      const activeId = resolveActiveId(parsed.activeId, entries);
       return { activeId, entries };
     }
   } catch {
