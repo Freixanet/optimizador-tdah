@@ -75,8 +75,6 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-core {
           fill: currentColor;
-          transform-origin: 50px 50px;
-          transform-box: fill-box;
           animation: nucleo-core-pulse 2.8s ease-in-out infinite;
         }
 
@@ -177,24 +175,22 @@ export const NucleoIcon = ({ className = '' }) => {
 
         @keyframes nucleo-core-pulse {
           0%, 100% {
-            transform: scale(0.92);
-            opacity: 0.84;
+            opacity: 0.72;
           }
           50% {
-            transform: scale(1.13);
             opacity: 1;
           }
         }
 
         @keyframes nucleo-core-burst {
           0% {
-            transform: scale(1);
+            opacity: 0.84;
           }
           34% {
-            transform: scale(1.58);
+            opacity: 1;
           }
           100% {
-            transform: scale(1);
+            opacity: 0.84;
           }
         }
 
