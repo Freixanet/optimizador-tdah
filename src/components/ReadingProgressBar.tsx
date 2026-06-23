@@ -90,7 +90,7 @@ function ReadingProgressBar({
 
   return (
     <div
-      className={`shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5 pt-[env(safe-area-inset-top)]${sticky ? ' sticky top-0 z-40' : ''}`}
+      className={`shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5${sticky ? ' sticky top-0 z-40' : ''}`}
       role="region"
       aria-label="Progreso de lectura"
     >

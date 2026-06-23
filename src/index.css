@@ -56,6 +56,20 @@
   button {
     cursor: pointer;
   }
+
+  html.native-shell {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html.native-shell body,
+  html.native-shell #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background-color: var(--color-app-canvas);
+  }
 }
 
 @layer utilities {

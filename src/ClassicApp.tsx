@@ -940,21 +940,7 @@ export default function ClassicApp() {
       return;
     }
 
-    const footerEl = stepFooterRef.current;
-    if (!footerEl) return;
-
-    const updatePadding = () => {
-      setContentBottomPad(footerEl.offsetHeight + CONTENT_FOOTER_GAP_PX);
-    };
-
-    updatePadding();
-
-    const resizeObserver = new ResizeObserver(updatePadding);
-    resizeObserver.observe(footerEl);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
+    setContentBottomPad(PAGE_BOTTOM_PAD_PX);
   }, [currentStep, appState, viewAll, isComplete]);
 
   React.useEffect(() => {
@@ -1331,9 +1317,9 @@ export default function ClassicApp() {
 
   const renderSidebar = () => (
     <aside
-      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-app-canvas border-r border-neutral-200 dark:border-white/5 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
+      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-app-canvas border-r border-neutral-200 dark:border-white/5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
         isMapOpen
-          ? 'translate-x-0 w-full lg:w-72 h-dvh flex flex-col overflow-hidden'
+          ? 'translate-x-0 w-full lg:w-72 flex flex-col overflow-hidden'
           : '-translate-x-full pointer-events-none lg:pointer-events-auto lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
       }`}
       aria-hidden={!isMapOpen && !isDesktop}
@@ -1963,30 +1949,36 @@ export default function ClassicApp() {
 
   return (
     <div
-      className="min-h-dvh min-h-[100dvh] bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      className="h-dvh max-h-[100dvh] overflow-hidden bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)]"
       onTouchStart={handleSwipeTouchStart}
       onTouchEnd={handleSwipeTouchEnd}
     >
       {renderSidebar()}
 
-      <main className="flex-1 min-w-0 w-full scroll-smooth touch-pan-y flex flex-col bg-app-canvas">
+      <main
+        className={`flex-1 min-w-0 min-h-0 w-full flex flex-col bg-app-canvas ${
+          appState === 'result' && (viewAll || isComplete)
+            ? 'overflow-y-auto overscroll-y-contain touch-pan-y'
+            : 'overflow-hidden'
+        }`}
+      >
         {appState === 'input' && renderInputContent()}
 
         {appState === 'loading' && renderLoadingContent()}
 
         {appState === 'result' && !viewAll && !isComplete && (
-          <div className="flex flex-col h-dvh w-full min-h-0">
+          <div className="flex flex-col flex-1 min-h-0 w-full">
             {(!isMapOpen || isDesktop) && renderProgressBar()}
 
-            <div className="relative flex-1 min-h-0">
+            <div className="flex flex-col flex-1 min-h-0">
               <div
                 ref={contentRef}
-                className="absolute inset-0 overflow-y-auto touch-pan-y"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
               >
                 <div
                   className="max-w-3xl mx-auto px-6 py-8 w-full"
                   style={{
-                    paddingBottom: `calc(${contentBottomPad}px + env(safe-area-inset-bottom, 0px))`,
+                    paddingBottom: `${contentBottomPad}px`,
                   }}
                 >
                   {currentStep === 0 && renderMapTitle(true)}
@@ -1996,21 +1988,22 @@ export default function ClassicApp() {
                 </div>
               </div>
 
-              <motion.div
-                className="absolute inset-x-0 bottom-0"
-                initial={false}
-                animate={
-                  shouldShowStepFooter
-                    ? { y: 0, opacity: 1 }
-                    : { y: reduceMotion ? 0 : 12, opacity: 0 }
-                }
-                transition={
-                  reduceMotion ? { duration: 0 } : { duration: 0.25, ease: 'easeOut' }
-                }
-                style={{ pointerEvents: shouldShowStepFooter ? 'auto' : 'none' }}
-              >
-                <div ref={stepFooterRef}>{renderStepNavFooter()}</div>
-              </motion.div>
+              {shouldShowStepFooter && (
+                <motion.div
+                  className="shrink-0"
+                  initial={false}
+                  animate={
+                    reduceMotion
+                      ? { opacity: 1 }
+                      : { y: 0, opacity: 1 }
+                  }
+                  transition={
+                    reduceMotion ? { duration: 0 } : { duration: 0.25, ease: 'easeOut' }
+                  }
+                >
+                  <div ref={stepFooterRef}>{renderStepNavFooter()}</div>
+                </motion.div>
+              )}
             </div>
           </div>
         )}
