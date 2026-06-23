@@ -47,7 +47,7 @@ export const NucleoIcon = ({ className = '' }) => {
         .nucleo-orbit {
           fill: none;
           stroke: currentColor;
-          stroke-width: 2.5;
+          stroke-width: 3;
           opacity: 0.25;
         }
 
