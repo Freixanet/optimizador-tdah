@@ -1219,12 +1219,6 @@ export default function App() {
           }`}
         >
           <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
-          {cloudUser && (
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-app-canvas"
-              aria-hidden="true"
-            />
-          )}
         </div>
       </button>
       {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}
