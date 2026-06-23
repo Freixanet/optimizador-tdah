@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Menu } from 'lucide-react';
-import { motion, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react';
+import {
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+  useSpring,
+} from 'motion/react';
 
 type ReadingProgressBarProps = {
   active: boolean;
@@ -23,10 +29,15 @@ function ReadingProgressBar({
 }: ReadingProgressBarProps) {
   const reduceMotion = useReducedMotion();
   const viewAllProgress = useMotionValue(isComplete ? 1 : 0);
+  const smoothViewAllProgress = useSpring(viewAllProgress, {
+    stiffness: 320,
+    damping: 38,
+    mass: 0.24,
+  });
   const displayedPercentRef = useRef(isComplete ? 100 : 0);
   const [displayPercent, setDisplayPercent] = useState(isComplete ? 100 : 0);
 
-  useMotionValueEvent(viewAllProgress, 'change', (latest) => {
+  useMotionValueEvent(reduceMotion ? viewAllProgress : smoothViewAllProgress, 'change', (latest) => {
     const nextPercent = Math.round(Math.min(1, Math.max(0, latest)) * 100);
     if (nextPercent === displayedPercentRef.current) return;
     displayedPercentRef.current = nextPercent;
@@ -110,7 +121,7 @@ function ReadingProgressBar({
           className={`h-full bg-indigo-600 dark:bg-indigo-500 rounded-r-full${viewAll ? ' w-full origin-left will-change-transform' : ' transition-all duration-500 ease-out'}`}
           style={
             viewAll
-              ? { scaleX: reduceMotion ? displayPercent / 100 : viewAllProgress }
+              ? { scaleX: reduceMotion ? viewAllProgress : smoothViewAllProgress }
               : { width: `${stepProgress}%` }
           }
           role="progressbar"

@@ -1211,32 +1211,34 @@ export default function App() {
   );
 
   const renderCollapsedRail = () => (
-    <div className="hidden lg:flex flex-col h-full w-14 shrink-0 items-center py-5 gap-1">
+    <div className="hidden lg:flex flex-col h-full w-14 shrink-0 items-center py-5">
       <button
         type="button"
         onClick={toggleSidebar}
-        className="p-2 rounded-xl text-[#1A1A1A] dark:text-[#EDEDED] hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        className="mb-5 p-2 rounded-xl text-[#1A1A1A] dark:text-[#EDEDED] hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
         title="Abrir panel lateral"
         aria-label="Abrir panel lateral"
       >
         <AppIcon className="w-7 h-7" />
       </button>
-      <button
-        onClick={handleNewMap}
-        className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-        title="Nuevo mapa"
-        aria-label="Nuevo mapa"
-      >
-        <SquarePen className="w-5 h-5" />
-      </button>
-      <button
-        onClick={toggleSidebar}
-        className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-        title="Historial"
-        aria-label="Abrir historial"
-      >
-        <History className="w-5 h-5" />
-      </button>
+      <div className="flex flex-col items-center gap-1">
+        <button
+          onClick={handleNewMap}
+          className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+          title="Nuevo mapa"
+          aria-label="Nuevo mapa"
+        >
+          <SquarePen className="w-5 h-5" />
+        </button>
+        <button
+          onClick={toggleSidebar}
+          className="p-2.5 rounded-full text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+          title="Historial"
+          aria-label="Abrir historial"
+        >
+          <History className="w-5 h-5" />
+        </button>
+      </div>
       <div className="mt-auto pb-2">{renderProfileTrigger('compact')}</div>
     </div>
   );
@@ -1877,6 +1879,9 @@ export default function App() {
                 </button>
               </div>
             </div>
+            <p className="px-1 py-3 text-center text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Texto, enlaces, archivos e imágenes. Recibirás una idea central, un resumen útil y una guía de lectura.
+            </p>
           </div>
         </div>
       </div>
