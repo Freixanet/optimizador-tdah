@@ -1,11 +1,5 @@
-export type SavedSession = {
-  data: any;
-  currentStep: number;
-  isComplete?: boolean;
-  viewAll?: boolean;
-};
-
-export type SourceType = 'text' | 'link' | 'youtube' | 'file' | 'pdf';
+import type { SavedSession, SourceType } from './contracts';
+export type { SourceType } from './contracts';
 
 export type HistoryEntry = {
   id: string;
@@ -46,7 +40,8 @@ function generateId(): string {
 
 function isValidSession(session: unknown): session is SavedSession {
   const s = session as SavedSession;
-  return Boolean(s?.data?.steps?.length);
+  const steps = (s?.data as { steps?: unknown } | undefined)?.steps;
+  return Array.isArray(steps) && steps.length > 0;
 }
 
 function isValidEntry(entry: unknown): entry is HistoryEntry {
@@ -73,9 +68,10 @@ function migrateLegacySession(): HistoryStore | null {
     }
 
     const now = Date.now();
+    const title = (parsed.data as { title?: string } | undefined)?.title || 'Mapa sin título';
     const entry: HistoryEntry = {
       id: generateId(),
-      title: parsed.data.title || 'Mapa sin título',
+      title,
       createdAt: now,
       updatedAt: now,
       sourceType: 'text',
@@ -164,12 +160,14 @@ export function getActiveEntry(store: HistoryStore): HistoryEntry | null {
 export function createEntry(
   store: HistoryStore,
   session: SavedSession,
-  sourceType: SourceType
+  sourceType: SourceType,
+  providedId?: string
 ): HistoryStore {
   const now = Date.now();
+  const title = (session.data as { title?: string } | undefined)?.title || 'Mapa sin título';
   const entry: HistoryEntry = {
-    id: generateId(),
-    title: session.data?.title || 'Mapa sin título',
+    id: providedId || generateId(),
+    title,
     createdAt: now,
     updatedAt: now,
     sourceType,
@@ -193,7 +191,7 @@ export function updateActiveSession(
     entry.id === store.activeId
       ? {
           ...entry,
-          title: session.data?.title || entry.title,
+          title: ((session.data as { title?: string } | undefined)?.title || entry.title) as string,
           updatedAt: now,
           session,
         }

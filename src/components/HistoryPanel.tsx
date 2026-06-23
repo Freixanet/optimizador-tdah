@@ -25,7 +25,7 @@ type HistoryPanelProps = {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
-  onRename: (id: string, title: string) => void;
+  onRename?: (id: string, title: string) => void;
 };
 
 type ActionMenuState = {
@@ -225,7 +225,7 @@ export default function HistoryPanel({
   const commitRename = (entry: HistoryEntry) => {
     const trimmed = renameDraft.trim();
     cancelRename();
-    if (!trimmed || trimmed === entry.title) return;
+    if (!onRename || !trimmed || trimmed === entry.title) return;
     onRename(entry.id, trimmed);
   };
 
@@ -383,6 +383,7 @@ export default function HistoryPanel({
               }}
               role="menu"
             >
+              {onRename && (
               <button
                 type="button"
                 role="menuitem"
@@ -392,6 +393,7 @@ export default function HistoryPanel({
                 <Pencil className="w-4 h-4 shrink-0 text-neutral-500" />
                 Renombrar
               </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
