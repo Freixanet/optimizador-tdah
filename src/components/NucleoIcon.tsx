@@ -4,135 +4,138 @@ export const NucleoIcon = ({ className = '' }) => {
   const [isInteracting, setIsInteracting] = useState(false);
 
   const handleInteraction = () => {
-    // Evita solapar clics si ya está en animación
     if (isInteracting) return;
     setIsInteracting(true);
+    // Vuelve a la normalidad después de 700ms
     setTimeout(() => setIsInteracting(false), 700);
   };
 
-  // Ajuste drástico de velocidad durante los 700ms del clic
-  const orbit1Duration = isInteracting ? '0.8s' : '8s';
-  const orbit2Duration = isInteracting ? '1s' : '12s';
+  // El cambio de 'key' fuerza a React a reiniciar la animación al instante,
+  // creando un efecto de "salto cuántico" perfecto para la ráfaga de energía.
+  const animKey = isInteracting ? 'burst' : 'normal';
+
+  // Velocidades: Muy elegantes en reposo, rapidísimas en el tap.
+  const dur1 = isInteracting ? '0.6s' : '7s';
+  const dur2 = isInteracting ? '0.8s' : '9s';
+  const dur3 = isInteracting ? '1s' : '11s';
 
   return (
     <div
       onClick={handleInteraction}
-      className={`nucleo-container ${isInteracting ? 'is-bursting' : ''} ${className}`}
+      className={`nucleo-wrapper ${isInteracting ? 'is-bursting' : ''} ${className}`}
       role="button"
       aria-label="Animación del núcleo"
       tabIndex={0}
     >
       <style>{`
-        .nucleo-container {
+        .nucleo-wrapper {
           display: inline-flex;
           justify-content: center;
           align-items: center;
           cursor: pointer;
           -webkit-tap-highlight-color: transparent;
-          /* Curva de aceleración estilo iOS (spring) */
           transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .nucleo-container.is-bursting {
-          transform: scale(1.15);
+          padding: 8px; /* Área de toque más amplia */
         }
         
+        .nucleo-wrapper.is-bursting {
+          transform: scale(1.2);
+        }
+        
+        /* Tamaño ajustado al de tu primera imagen (pequeño y elegante) */
         .nucleo-svg {
-          width: 64px; /* Ajustable vía props/padre */
-          height: 64px;
-          color: currentColor;
+          width: 56px; 
+          height: 56px;
+          color: #000; /* Forzamos el negro para que destaque, o usa currentColor si tu app tiene modo oscuro */
           overflow: visible;
         }
 
-        /* Animaciones base */
+        /* Núcleo central */
         .nucleo-core {
           transform-origin: center;
-          animation: core-breathe 3s ease-in-out infinite alternate;
+          animation: core-pulse 3s ease-in-out infinite alternate;
         }
-        .nucleo-ring {
+
+        /* Órbitas */
+        .nucleo-orbit {
           fill: none;
           stroke: currentColor;
-          stroke-width: 1.5;
-          opacity: 0.15;
-          transform-origin: center;
-        }
-        .nucleo-ring-1 {
-          animation: ring-sway 15s ease-in-out infinite alternate;
-        }
-        .nucleo-ring-2 {
-          animation: ring-sway-reverse 20s ease-in-out infinite alternate;
-        }
-        .nucleo-particle {
-          fill: currentColor;
-          filter: drop-shadow(0 0 3px currentColor);
+          stroke-width: 1.5; /* Más gruesas para que destaquen */
+          opacity: 0.25;
         }
 
-        /* Keyframes */
-        @keyframes core-breathe {
+        /* Electrones */
+        .nucleo-electron {
+          fill: currentColor;
+          /* Resplandor sutil para que parezcan partículas de energía */
+          filter: drop-shadow(0px 0px 2px currentColor);
+        }
+
+        @keyframes core-pulse {
           from { 
-            transform: scale(0.95); 
-            filter: drop-shadow(0 0 2px currentColor); 
+            transform: scale(0.9); 
             opacity: 0.8;
+            filter: drop-shadow(0 0 2px currentColor); 
           }
           to { 
-            transform: scale(1.15); 
-            filter: drop-shadow(0 0 8px currentColor); 
+            transform: scale(1.1); 
             opacity: 1;
+            filter: drop-shadow(0 0 6px currentColor); 
           }
-        }
-        @keyframes ring-sway {
-          from { transform: rotate(-5deg) scale(0.98); }
-          to { transform: rotate(5deg) scale(1.02); }
-        }
-        @keyframes ring-sway-reverse {
-          from { transform: rotate(5deg) scale(0.98); }
-          to { transform: rotate(-5deg) scale(1.02); }
         }
 
-        /* Accesibilidad: Reducción de movimiento */
+        /* Reducción de movimiento por accesibilidad */
         @media (prefers-reduced-motion: reduce) {
-          .nucleo-core, .nucleo-ring-1, .nucleo-ring-2 {
-            animation: none;
-          }
-          .nucleo-container.is-bursting {
-            transform: none;
-          }
-          .nucleo-core {
-            filter: drop-shadow(0 0 4px currentColor);
-          }
-          .particle-anim {
-            display: none;
-          }
+          .nucleo-core { animation: none; filter: drop-shadow(0 0 4px currentColor); }
+          .nucleo-wrapper.is-bursting { transform: none; }
+          .nucleo-electron-anim { display: none; }
         }
       `}</style>
 
       <svg viewBox="0 0 100 100" className="nucleo-svg" aria-hidden="true">
         {/* NÚCLEO CENTRAL */}
-        <circle cx="50" cy="50" r="5" className="nucleo-core" />
+        <circle cx="50" cy="50" r="7" className="nucleo-core" />
 
-        {/* ÓRBITA 1 (Inclinada hacia la derecha) */}
-        <g transform="translate(50, 50) rotate(35) translate(-50, -50)">
-          <ellipse cx="50" cy="50" rx="38" ry="14" className="nucleo-ring nucleo-ring-1" />
-          <circle r="2.5" className="nucleo-particle">
-            {/* El path coincide exactamente con la elipse para un tracking perfecto */}
+        {/* --- ÓRBITA 1: Horizontal (0 grados) --- */}
+        <g>
+          {/* Elipse base (visual) */}
+          <ellipse cx="50" cy="50" rx="42" ry="14" className="nucleo-orbit" />
+          {/* Electrón 1 */}
+          <circle r="3.5" className="nucleo-electron">
             <animateMotion
-              className="particle-anim"
-              dur={orbit1Duration}
+              key={`o1-${animKey}`}
+              className="nucleo-electron-anim"
+              dur={dur1}
               repeatCount="indefinite"
-              path="M 50,36 A 38,14 0 1,1 49.9,36"
+              path="M 8,50 A 42,14 0 1,1 92,50 A 42,14 0 1,1 8,50"
             />
           </circle>
         </g>
 
-        {/* ÓRBITA 2 (Inclinada hacia la izquierda) */}
-        <g transform="translate(50, 50) rotate(-35) translate(-50, -50)">
-          <ellipse cx="50" cy="50" rx="38" ry="14" className="nucleo-ring nucleo-ring-2" />
-          <circle r="2.5" className="nucleo-particle">
-            {/* El flag 1,0 al final invierte la dirección de la partícula */}
+        {/* --- ÓRBITA 2: Inclinada 60 grados --- */}
+        <g transform="rotate(60 50 50)">
+          <ellipse cx="50" cy="50" rx="42" ry="14" className="nucleo-orbit" />
+          <circle r="3.5" className="nucleo-electron">
             <animateMotion
-              className="particle-anim"
-              dur={orbit2Duration}
+              key={`o2-${animKey}`}
+              className="nucleo-electron-anim"
+              dur={dur2}
               repeatCount="indefinite"
-              path="M 50,36 A 38,14 0 1,0 50.1,36"
+              path="M 8,50 A 42,14 0 1,1 92,50 A 42,14 0 1,1 8,50"
+            />
+          </circle>
+        </g>
+
+        {/* --- ÓRBITA 3: Inclinada 120 grados (-60 grados) --- */}
+        <g transform="rotate(120 50 50)">
+          <ellipse cx="50" cy="50" rx="42" ry="14" className="nucleo-orbit" />
+          <circle r="3.5" className="nucleo-electron">
+            <animateMotion
+              key={`o3-${animKey}`}
+              className="nucleo-electron-anim"
+              dur={dur3}
+              repeatCount="indefinite"
+              path="M 8,50 A 42,14 0 1,0 92,50 A 42,14 0 1,0 8,50"
             />
           </circle>
         </g>
