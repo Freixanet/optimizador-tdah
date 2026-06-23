@@ -52,7 +52,7 @@ function ShimmerBlock({
 
 function AppIconGlow({ reduceMotion }: { reduceMotion: boolean | null }) {
   return (
-    <span className="relative inline-flex items-center justify-center w-7 h-7 shrink-0">
+    <span className="relative inline-flex items-center justify-center w-11 h-11 shrink-0">
       {!reduceMotion && (
         <motion.span
           className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-400/60 to-indigo-600/40 dark:from-indigo-500/50 dark:to-indigo-400/30 blur-md"
@@ -61,7 +61,11 @@ function AppIconGlow({ reduceMotion }: { reduceMotion: boolean | null }) {
           aria-hidden="true"
         />
       )}
-      <NucleoIcon className={`scale-[0.32] origin-center ${PHASE_TEXT}`} />
+      <NucleoIcon
+        energized={!reduceMotion}
+        interactive={false}
+        className={`scale-[0.45] origin-center ${PHASE_TEXT}`}
+      />
     </span>
   );
 }

@@ -1,12 +1,24 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 
-export const NucleoIcon = ({ className = '' }) => {
+type NucleoIconProps = {
+  className?: string;
+  energized?: boolean;
+  interactive?: boolean;
+};
+
+export const NucleoIcon = ({
+  className = '',
+  energized = false,
+  interactive = true,
+}: NucleoIconProps) => {
   const [isInteracting, setIsInteracting] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   const rawId = useId();
   const glowId = `nucleo-glow-${rawId.replace(/:/g, '')}`;
   const energySoftId = `nucleo-energy-soft-${rawId.replace(/:/g, '')}`;
   const energyLightId = `nucleo-energy-light-${rawId.replace(/:/g, '')}`;
+  const isBursting = isInteracting;
+  const Wrapper = interactive ? 'button' : 'span';
 
   const triggerBurst = () => {
     if (timeoutRef.current) {
@@ -29,11 +41,15 @@ export const NucleoIcon = ({ className = '' }) => {
   }, []);
 
   return (
-    <button
-      type="button"
-      onClick={triggerBurst}
-      className={`nucleo-wrapper ${isInteracting ? 'is-bursting' : ''} ${className}`}
-      aria-label="Activar núcleo"
+    <Wrapper
+      {...(interactive
+        ? {
+            type: 'button' as const,
+            onClick: triggerBurst,
+            'aria-label': 'Activar núcleo',
+          }
+        : { 'aria-hidden': true as const })}
+      className={`nucleo-wrapper ${isBursting ? 'is-bursting' : ''} ${energized ? 'is-energized' : ''} ${interactive ? '' : 'is-static'} ${className}`}
     >
       <style>{`
         .nucleo-wrapper {
@@ -59,6 +75,11 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-wrapper.is-bursting {
           transform: scale(1.12);
+        }
+
+        .nucleo-wrapper.is-static {
+          cursor: default;
+          pointer-events: none;
         }
 
         .nucleo-svg {
@@ -133,6 +154,11 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .energy-3 .nucleo-energy-glow {
           opacity: 0.15;
+        }
+
+        .nucleo-wrapper.is-energized .nucleo-energy,
+        .nucleo-wrapper.is-energized .nucleo-energy-glow {
+          animation-duration: 1.15s;
         }
 
         .nucleo-burst-ring {
@@ -278,7 +304,7 @@ export const NucleoIcon = ({ className = '' }) => {
 
         <circle cx="50" cy="50" r="7" className="nucleo-core" filter={`url(#${glowId})`} />
       </svg>
-    </button>
+    </Wrapper>
   );
 };
 
