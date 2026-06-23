@@ -117,7 +117,7 @@ function ReadingProgressBar({
           </div>
         </div>
         <span
-          className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-xs sm:text-sm font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/20"
+          className="shrink-0 text-xs sm:text-sm font-bold text-indigo-700 dark:text-indigo-300"
           aria-live="polite"
         >
           {shownPercent}%

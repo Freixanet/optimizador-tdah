@@ -1918,9 +1918,9 @@ export default function ComprensionApp() {
             </span>
           </div>
           {totalMinutes !== null && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold border border-indigo-200 dark:border-indigo-500/20">
-              <Clock className="w-4 h-4" />
-              Lectura total: ~{totalMinutes} min
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+              <Clock className="w-4 h-4" aria-hidden="true" />
+              ~{totalMinutes} min
             </span>
           )}
         </div>
