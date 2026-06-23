@@ -41,6 +41,7 @@ import {
   deleteEntry,
   getActiveEntry,
   loadHistory,
+  renameEntry,
   saveHistory,
   setActiveId,
   togglePinEntry,
@@ -820,6 +821,26 @@ export default function App() {
     });
   };
 
+  const handleRenameHistory = (id: string, title: string) => {
+    setHistoryStore((prev) => {
+      const updated = renameEntry(prev, id, title);
+      saveHistory(updated);
+      if (cloudUser) {
+        const entry = updated.entries.find((item) => item.id === id);
+        if (entry) {
+          void pushHistoryEntry(entry).catch(() =>
+            setSyncError('No se pudo renombrar el mapa en la nube.')
+          );
+        }
+      }
+      return updated;
+    });
+
+    if (historyStore.activeId === id) {
+      setData((prev) => (prev ? { ...prev, title } : prev));
+    }
+  };
+
   const scrollToSection = useCallback((idx: number) => {
     const id = idx === 0 ? 'section-resumen' : `section-step-${idx}`;
     const el = document.getElementById(id);
@@ -1357,6 +1378,7 @@ export default function App() {
             onSelect={handleSelectHistory}
             onDelete={handleDeleteHistory}
             onTogglePin={handleTogglePinHistory}
+            onRename={handleRenameHistory}
           />
         </div>
 

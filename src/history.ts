@@ -217,6 +217,31 @@ export function deleteEntry(store: HistoryStore, id: string): HistoryStore {
   return { activeId, entries };
 }
 
+export function renameEntry(store: HistoryStore, id: string, title: string): HistoryStore {
+  const trimmed = title.trim();
+  if (!trimmed) return store;
+
+  const now = Date.now();
+  const entries = store.entries.map((entry) => {
+    if (entry.id !== id) return entry;
+
+    return {
+      ...entry,
+      title: trimmed,
+      updatedAt: now,
+      session: {
+        ...entry.session,
+        data: {
+          ...entry.session.data,
+          title: trimmed,
+        },
+      },
+    };
+  });
+
+  return { ...store, entries };
+}
+
 export function togglePinEntry(store: HistoryStore, id: string): HistoryStore {
   const now = Date.now();
   const entries = store.entries.map((entry) => {

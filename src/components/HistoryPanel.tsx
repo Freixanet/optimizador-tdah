@@ -9,6 +9,7 @@ import {
   File,
   Pin,
   PinOff,
+  Pencil,
   X,
 } from 'lucide-react';
 import {
@@ -24,6 +25,7 @@ type HistoryPanelProps = {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 };
 
 type ActionMenuState = {
@@ -57,9 +59,13 @@ export default function HistoryPanel({
   onSelect,
   onDelete,
   onTogglePin,
+  onRename,
 }: HistoryPanelProps) {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
+  const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const suppressClickRef = useRef(false);
@@ -93,6 +99,12 @@ export default function HistoryPanel({
       window.removeEventListener('resize', closeMenu);
     };
   }, [actionMenu]);
+
+  useEffect(() => {
+    if (!renamingEntryId) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingEntryId]);
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -199,20 +211,45 @@ export default function HistoryPanel({
     setActionMenu(null);
   };
 
+  const startRename = (entry: HistoryEntry) => {
+    setRenamingEntryId(entry.id);
+    setRenameDraft(entry.title);
+    setActionMenu(null);
+  };
+
+  const cancelRename = () => {
+    setRenamingEntryId(null);
+    setRenameDraft('');
+  };
+
+  const commitRename = (entry: HistoryEntry) => {
+    const trimmed = renameDraft.trim();
+    cancelRename();
+    if (!trimmed || trimmed === entry.title) return;
+    onRename(entry.id, trimmed);
+  };
+
   const renderEntryItem = (entry: HistoryEntry) => {
     const Icon = SOURCE_ICONS[entry.sourceType] || FileText;
     const isActive = entry.id === activeId;
     const isPinned = Boolean(entry.pinned);
+    const isRenaming = renamingEntryId === entry.id;
 
     return (
       <li key={entry.id} className="group relative">
         <button
           type="button"
-          onPointerDown={(e) => handleEntryPointerDown(entry, e)}
+          onPointerDown={(e) => {
+            if (isRenaming) return;
+            handleEntryPointerDown(entry, e);
+          }}
           onPointerMove={handleEntryPointerMove}
           onPointerUp={handleEntryPointerUp}
           onPointerCancel={handleEntryPointerCancel}
-          onClick={() => handleEntryClick(entry.id)}
+          onClick={() => {
+            if (isRenaming) return;
+            handleEntryClick(entry.id);
+          }}
           onContextMenu={(e) => handleEntryContextMenu(entry, e)}
           disabled={disabled}
           className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-pan-y [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
@@ -225,12 +262,37 @@ export default function HistoryPanel({
         >
           <Icon className="w-4 h-4 shrink-0 mt-0.5 opacity-70" />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold truncate">{entry.title}</span>
+            {isRenaming ? (
+              <input
+                ref={renameInputRef}
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitRename(entry);
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                onBlur={() => commitRename(entry)}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="w-full rounded-md border border-indigo-300 dark:border-indigo-500/40 bg-white dark:bg-neutral-900 px-2 py-1 text-sm font-semibold text-neutral-800 dark:text-neutral-100 outline-none"
+                aria-label="Nuevo nombre del mapa"
+              />
+            ) : (
+              <span className="block text-sm font-semibold truncate">{entry.title}</span>
+            )}
             <span className="block text-xs opacity-70 mt-0.5">
               {formatRelativeDate(entry.updatedAt)}
             </span>
           </span>
         </button>
+        {!isRenaming && (
         <button
           type="button"
           onClick={(e) => {
@@ -244,6 +306,7 @@ export default function HistoryPanel({
         >
           <X className="w-3.5 h-3.5" />
         </button>
+        )}
       </li>
     );
   };
@@ -320,6 +383,15 @@ export default function HistoryPanel({
               }}
               role="menu"
             >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => startRename(actionMenu.entry)}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+              >
+                <Pencil className="w-4 h-4 shrink-0 text-neutral-500" />
+                Renombrar
+              </button>
               <button
                 type="button"
                 role="menuitem"
