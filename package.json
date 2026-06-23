@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch server.ts",
-    "build": "VITE_APP_VARIANT=classic VITE_CLASSIC_APP_URL=${VITE_CLASSIC_APP_URL:-https://optimizador-tdah-production.up.railway.app} VITE_COMPRENSION_APP_URL=${VITE_COMPRENSION_APP_URL:-https://nucleo-comprension-production.up.railway.app} vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "build:capacitor": "VITE_APP_VARIANT=classic VITE_CLASSIC_APP_URL=${VITE_CLASSIC_APP_URL:-https://optimizador-tdah-production.up.railway.app} VITE_COMPRENSION_APP_URL=${VITE_COMPRENSION_APP_URL:-https://nucleo-comprension-production.up.railway.app} VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://optimizador-tdah-production.up.railway.app} vite build",
+    "build": "VITE_APP_VARIANT=comprension VITE_CLASSIC_APP_URL=${VITE_CLASSIC_APP_URL:-https://optimizador-tdah-production.up.railway.app} VITE_COMPRENSION_APP_URL=${VITE_COMPRENSION_APP_URL:-https://nucleo-comprension-production.up.railway.app} vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:capacitor": "VITE_APP_VARIANT=comprension VITE_CLASSIC_APP_URL=${VITE_CLASSIC_APP_URL:-https://optimizador-tdah-production.up.railway.app} VITE_COMPRENSION_APP_URL=${VITE_COMPRENSION_APP_URL:-https://nucleo-comprension-production.up.railway.app} VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://nucleo-comprension-production.up.railway.app} vite build",
     "cap:sync": "npm run build:capacitor && npx cap sync",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "start": "NODE_ENV=production node dist/server.cjs",

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import MenuTwoLines from './MenuTwoLines';
+import { Menu } from 'lucide-react';
 import {
   motion,
   useMotionValue,
@@ -14,6 +14,7 @@ type ReadingProgressBarProps = {
   isComplete: boolean;
   stepProgress: number;
   progressLabel: string;
+  mapTitle: string;
   sticky?: boolean;
   onToggleSidebar: () => void;
 };
@@ -24,6 +25,7 @@ function ReadingProgressBar({
   isComplete,
   stepProgress,
   progressLabel,
+  mapTitle,
   sticky = false,
   onToggleSidebar,
 }: ReadingProgressBarProps) {
@@ -103,14 +105,19 @@ function ReadingProgressBar({
             title="Abrir navegación"
             aria-label="Abrir navegación"
           >
-            <MenuTwoLines className="w-5 h-5" />
+            <Menu className="w-5 h-5" />
           </button>
-          <span className="truncate text-xs sm:text-sm font-bold text-neutral-700 dark:text-neutral-200">
-            {progressLabel}
-          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[11px] sm:text-xs font-bold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
+              {mapTitle}
+            </p>
+            <p className="truncate text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-100">
+              {progressLabel}
+            </p>
+          </div>
         </div>
         <span
-          className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-xs sm:text-sm font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
+          className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-xs sm:text-sm font-bold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/20"
           aria-live="polite"
         >
           {shownPercent}%

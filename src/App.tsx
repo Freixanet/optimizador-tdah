@@ -16,6 +16,7 @@ import {
   Clock,
   Layers,
   List,
+  Menu,
   History,
   Settings,
   LogOut,
@@ -23,13 +24,29 @@ import {
   Plus,
   Camera,
   Paperclip,
+  Download,
+  MessageSquareText,
+  BookOpen,
+  GraduationCap,
+  ListChecks,
+  Globe2,
+  CircleAlert,
 } from 'lucide-react';
 import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import LoadingState from './components/LoadingState';
-import MenuTwoLines from './components/MenuTwoLines';
 import ReadingProgressBar from './components/ReadingProgressBar';
+import type {
+  ActionMapData,
+  CalloutLabel,
+  ChatTurn,
+  MapChatResponse,
+  MapIntent,
+  SavedSession,
+  SourceReference,
+  TransformRequest,
+} from './contracts';
 import {
   getInitialModelPreference,
   MODEL_OPTIONS,
@@ -46,7 +63,6 @@ import {
   deleteEntry,
   getActiveEntry,
   loadHistory,
-  renameEntry,
   saveHistory,
   setActiveId,
   togglePinEntry,
@@ -73,6 +89,7 @@ type UploadedFile = {
   size: number;
   isPdf?: boolean;
   isImage?: boolean;
+  isVideo?: boolean;
   fileData?: string;
   mimeType?: string;
   previewUrl?: string;
@@ -82,7 +99,36 @@ const DESKTOP_BREAKPOINT = 1024;
 const RECENT_IMAGES_KEY = 'nucleo-recent-images';
 const MAX_RECENT_IMAGES = 8;
 const IMAGE_MAX_DIMENSION = 1024;
-
+const DEFAULT_CALLOUT_LABELS: Record<string, CalloutLabel> = {
+  action: 'Para aplicarlo',
+  info: 'Idea clave',
+  alert: 'Precaución',
+};
+const INTENT_OPTIONS: Array<{
+  id: MapIntent;
+  title: string;
+  description: string;
+  icon: typeof BookOpen;
+}> = [
+  {
+    id: 'understand',
+    title: 'Comprender',
+    description: 'Idea central, contexto, argumentos y matices.',
+    icon: BookOpen,
+  },
+  {
+    id: 'study',
+    title: 'Estudiar',
+    description: 'Conceptos, relaciones y repaso para retener.',
+    icon: GraduationCap,
+  },
+  {
+    id: 'apply',
+    title: 'Aplicar',
+    description: 'Decisiones, pasos, riesgos y siguiente acción.',
+    icon: ListChecks,
+  },
+];
 function loadRecentImages(): string[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -144,6 +190,176 @@ async function processImageFile(
 }
 const PAGE_BOTTOM_PAD_PX = 24;
 const CONTENT_FOOTER_GAP_PX = 48;
+
+function generateMapId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getIntentLabel(intent: MapIntent | undefined) {
+  if (intent === 'study') return 'Estudiar';
+  if (intent === 'apply') return 'Aplicar';
+  return 'Comprender';
+}
+
+function getResolvedOutputLanguage() {
+  return 'es';
+}
+
+function getRenderedOutputLanguage(language: string | undefined) {
+  if (language?.toLowerCase().startsWith('en')) return 'English';
+  if (language?.toLowerCase().startsWith('es')) return 'Español';
+  if (typeof navigator === 'undefined') return 'Idioma del usuario';
+  return navigator.language.startsWith('es') ? 'Español' : 'Idioma del usuario';
+}
+
+function normalizeReferences(input: unknown): SourceReference[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((ref) => {
+      const value = ref as SourceReference;
+      if (!value?.label || !value?.locator) return null;
+      return {
+        label: String(value.label),
+        locator: String(value.locator),
+        locatorKind: value.locatorKind,
+        excerpt: value.excerpt ? String(value.excerpt) : undefined,
+        note: value.note ? String(value.note) : undefined,
+      } satisfies SourceReference;
+    })
+    .filter(Boolean) as SourceReference[];
+}
+
+function normalizeMapData(input: any): ActionMapData | null {
+  if (!input?.title || !Array.isArray(input?.steps) || !Array.isArray(input?.tldr)) return null;
+
+  const normalizedSteps = input.steps.map((step: any, index: number) => ({
+    id: String(step?.id || `step-${index + 1}`),
+    shortNav: String(step?.shortNav || step?.title || `Paso ${index + 1}`),
+    title: String(step?.title || `Paso ${index + 1}`),
+    time: String(step?.time || '~3 min'),
+    purpose: step?.purpose ? String(step.purpose) : undefined,
+    content: Array.isArray(step?.content)
+      ? step.content
+          .map((block: any) => ({
+            type: String(block?.type || 'prose') as 'prose' | 'callout' | 'list',
+            text: String(block?.text || '').trim(),
+            kind: block?.kind ? String(block.kind) : undefined,
+            label: block?.label
+              ? (String(block.label) as CalloutLabel)
+              : DEFAULT_CALLOUT_LABELS[String(block?.kind || 'info')] || 'Idea clave',
+            items: Array.isArray(block?.items)
+              ? block.items
+                  .map((item: any) =>
+                    item?.strong
+                      ? {
+                          strong: String(item.strong),
+                          span: item?.span ? String(item.span) : undefined,
+                        }
+                      : null
+                  )
+                  .filter(Boolean)
+              : undefined,
+            references: normalizeReferences(block?.references),
+          }))
+          .filter((block) => block.text || block.items?.length)
+      : [],
+    references: normalizeReferences(step?.references),
+  }));
+
+  const normalized = {
+    title: String(input.title),
+    category: input?.category ? String(input.category) : undefined,
+    intent: input?.intent === 'study' || input?.intent === 'apply' ? input.intent : 'understand',
+    outputLanguage: input?.outputLanguage ? String(input.outputLanguage) : 'es',
+    mapVersion: Number.isFinite(input?.mapVersion) ? Number(input.mapVersion) : 2,
+    sourceMetadata: {
+      kind: input?.sourceMetadata?.kind || 'text',
+      label: input?.sourceMetadata?.label || 'Fuente analizada',
+      title: input?.sourceMetadata?.title ? String(input.sourceMetadata.title) : undefined,
+      author: input?.sourceMetadata?.author ? String(input.sourceMetadata.author) : undefined,
+      language: input?.sourceMetadata?.language ? String(input.sourceMetadata.language) : undefined,
+      detected: Array.isArray(input?.sourceMetadata?.detected)
+        ? input.sourceMetadata.detected.map((item: unknown) => String(item))
+        : [],
+      limitations: Array.isArray(input?.sourceMetadata?.limitations)
+        ? input.sourceMetadata.limitations.map((item: unknown) => String(item))
+        : [],
+    },
+    coverage: {
+      summary: input?.coverage?.summary
+        ? String(input.coverage.summary)
+        : 'Lectura generada a partir del material disponible.',
+      notes: Array.isArray(input?.coverage?.notes)
+        ? input.coverage.notes
+            .map((note: any) =>
+              note?.label && note?.detail
+                ? {
+                    label: String(note.label),
+                    detail: String(note.detail),
+                    tone: note?.tone === 'warning' ? 'warning' : 'neutral',
+                  }
+                : null
+            )
+            .filter(Boolean)
+        : [],
+    },
+    coreIdea: String(input?.coreIdea || ''),
+    coreSupport: String(input?.coreSupport || ''),
+    tldr: input.tldr
+      .map((item: any) =>
+        item?.title && item?.desc
+          ? { title: String(item.title), desc: String(item.desc) }
+          : null
+      )
+      .filter(Boolean),
+    knowledgeSections: Array.isArray(input?.knowledgeSections)
+      ? input.knowledgeSections
+          .map((section: any) =>
+            section?.title && section?.summary
+              ? {
+                  title: String(section.title),
+                  summary: String(section.summary),
+                  references: normalizeReferences(section.references),
+                }
+              : null
+          )
+          .filter(Boolean)
+      : [],
+    steps: normalizedSteps,
+    references: normalizeReferences(input?.references),
+    completionCard: {
+      title: input?.completionCard?.title ? String(input.completionCard.title) : 'Mapa completado',
+      summary: input?.completionCard?.summary
+        ? String(input.completionCard.summary)
+        : 'Vuelve aquí para repasar lo esencial sin tener que releerlo todo.',
+      takeaways: Array.isArray(input?.completionCard?.takeaways)
+        ? input.completionCard.takeaways.map((item: unknown) => String(item)).filter(Boolean)
+        : [],
+      promptQuestion: input?.completionCard?.promptQuestion
+        ? String(input.completionCard.promptQuestion)
+        : undefined,
+    },
+    modelUsed: input?.modelUsed ? String(input.modelUsed) : undefined,
+  };
+
+  if (!normalized.sourceMetadata.detected.length) {
+    normalized.sourceMetadata.detected = [normalized.sourceMetadata.label];
+  }
+  if (!normalized.completionCard.takeaways.length) {
+    normalized.completionCard.takeaways = normalized.tldr
+      .slice(0, 5)
+      .map((item) => `${item.title}: ${item.desc}`);
+  }
+
+  return normalized;
+}
 
 function isSingleUrl(text: string): boolean {
   return /^https?:\/\/\S+$/.test(text.trim());
@@ -226,13 +442,14 @@ export default function App() {
   const initialHistory: HistoryStore =
     typeof window !== 'undefined' ? loadHistory() : { activeId: null, entries: [] };
   const initialActive = getActiveEntry(initialHistory);
+  const initialActiveData = initialActive ? normalizeMapData(initialActive.session.data) : null;
 
   const [historyStore, setHistoryStore] = useState<HistoryStore>(initialHistory);
   const [inputText, setInputText] = useState('');
   const [appState, setAppState] = useState<'input' | 'loading' | 'result'>(
-    initialActive ? 'result' : 'input'
+    initialActiveData ? 'result' : 'input'
   );
-  const [data, setData] = useState<any>(initialActive?.session.data ?? null);
+  const [data, setData] = useState<ActionMapData | null>(initialActiveData);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(initialActive?.session.currentStep ?? 0);
@@ -247,6 +464,7 @@ export default function App() {
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [modelPreference, setModelPreference] = useState<ModelPreference>(getInitialModelPreference);
+  const [intent, setIntent] = useState<MapIntent>(initialActiveData?.intent ?? 'understand');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [cloudUser, setCloudUser] = useState<{ email?: string | null } | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -259,6 +477,11 @@ export default function App() {
   const [recentImages, setRecentImages] = useState<string[]>(loadRecentImages);
   const [isIndexExpanded, setIsIndexExpanded] = useState(true);
   const [showStepFooter, setShowStepFooter] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
 
   const contentRef = useRef<HTMLElement>(null);
@@ -280,6 +503,9 @@ export default function App() {
 
   const totalSteps = data?.steps?.length ?? 0;
   const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps ?? []), [data]);
+  const activeMapId = historyStore.activeId;
+  const resolvedOutputLanguage = getResolvedOutputLanguage();
+  const readerModeLabel = getIntentLabel(data?.intent ?? intent);
 
   const progress = useMemo(() => {
     if (isComplete) return 100;
@@ -291,10 +517,10 @@ export default function App() {
 
   const progressLabel = useMemo(() => {
     if (!data || totalSteps === 0) return '';
-    if (currentStep === 0) return `Introducción · 0 de ${totalSteps} pasos`;
-    if (isComplete) return `Completado · ${totalSteps} de ${totalSteps} pasos`;
-    return `Paso ${currentStep} de ${totalSteps}`;
-  }, [currentStep, data, totalSteps, isComplete]);
+    if (currentStep === 0) return `${readerModeLabel} · Introducción`;
+    if (isComplete) return `${readerModeLabel} · Mapa completado`;
+    return `${readerModeLabel} · Paso ${currentStep} de ${totalSteps}`;
+  }, [currentStep, data, totalSteps, isComplete, readerModeLabel]);
 
   const shouldShowStepFooter =
     showStepFooter || (!isDesktop && currentStep === 0 && !viewAll && !isComplete);
@@ -498,8 +724,25 @@ export default function App() {
     if (!file) return;
 
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isVideo = file.type.startsWith('video/');
 
-    if (isPdf) {
+    if (isVideo) {
+      void readFileAsDataUrl(file)
+        .then((dataUrl) => {
+          const base64 = dataUrl.split(',')[1];
+          setInputText('');
+          setUploadedFile({
+            name: file.name,
+            size: file.size,
+            isVideo: true,
+            fileData: base64,
+            mimeType: file.type || 'video/mp4',
+          });
+        })
+        .catch(() => {
+          setError('No se pudo leer el vídeo seleccionado.');
+        });
+    } else if (isPdf) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const dataUrl = event.target?.result as string;
@@ -662,20 +905,43 @@ export default function App() {
     abortControllerRef.current = controller;
 
     try {
-      let body: Record<string, string>;
+      const mapId = generateMapId();
+      const sourceLabel =
+        uploadedFile?.name || inputText.trim().split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
+      let body: TransformRequest;
       if (uploadedFile?.isPdf && uploadedFile.fileData) {
         body = {
           type: 'pdf',
           fileData: uploadedFile.fileData,
           mimeType: uploadedFile.mimeType || 'application/pdf',
           preferredModel: modelPreference,
+          intent,
+          outputLanguage: resolvedOutputLanguage,
+          sourceLabel,
+          mapId,
         };
+      } else if (uploadedFile?.isVideo && uploadedFile.fileData) {
+        body = {
+          type: 'video',
+          fileData: uploadedFile.fileData,
+          mimeType: uploadedFile.mimeType || 'video/mp4',
+          preferredModel: modelPreference,
+          intent,
+          outputLanguage: resolvedOutputLanguage,
+          sourceLabel,
+          mapId,
+        };
+        if (inputText.trim()) body.text = inputText.trim();
       } else if (uploadedFile?.isImage && uploadedFile.fileData) {
         body = {
           type: 'image',
           fileData: uploadedFile.fileData,
           mimeType: uploadedFile.mimeType || 'image/jpeg',
           preferredModel: modelPreference,
+          intent,
+          outputLanguage: resolvedOutputLanguage,
+          sourceLabel,
+          mapId,
         };
         if (inputText.trim()) body.text = inputText.trim();
       } else if (uploadedFile && inputText.trim()) {
@@ -683,6 +949,10 @@ export default function App() {
           text: inputText,
           type: 'text',
           preferredModel: modelPreference,
+          intent,
+          outputLanguage: resolvedOutputLanguage,
+          sourceLabel,
+          mapId,
         };
       } else {
         const trimmed = inputText.trim();
@@ -691,18 +961,30 @@ export default function App() {
             text: trimmed,
             type: 'youtube',
             preferredModel: modelPreference,
+            intent,
+            outputLanguage: resolvedOutputLanguage,
+            sourceLabel: trimmed,
+            mapId,
           };
         } else if (isSingleUrl(trimmed)) {
           body = {
             text: trimmed,
             type: 'link',
             preferredModel: modelPreference,
+            intent,
+            outputLanguage: resolvedOutputLanguage,
+            sourceLabel: trimmed,
+            mapId,
           };
         } else {
           body = {
             text: cleanTranscript(inputText),
             type: 'text',
             preferredModel: modelPreference,
+            intent,
+            outputLanguage: resolvedOutputLanguage,
+            sourceLabel,
+            mapId,
           };
         }
       }
@@ -720,10 +1002,12 @@ export default function App() {
         signal: controller.signal,
       })) as Response;
 
-      const parsedData = await response.json();
-      if (parsedData.error) throw new Error(parsedData.error);
+      const parsed = await response.json();
+      if (parsed.error) throw new Error(parsed.error);
+      const parsedData = normalizeMapData(parsed);
+      if (!parsedData) throw new Error('No se pudo interpretar el mapa generado.');
 
-      const session = {
+      const session: SavedSession = {
         data: parsedData,
         currentStep: 0,
         isComplete: false,
@@ -732,7 +1016,7 @@ export default function App() {
       const sourceType = resolveSourceType(inputText, uploadedFile);
 
       setHistoryStore((prev) => {
-        const updated = createEntry(prev, session, sourceType);
+        const updated = createEntry(prev, session, sourceType, mapId);
         if (!saveHistory(updated)) {
           setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
         }
@@ -740,6 +1024,11 @@ export default function App() {
       });
 
       setData(parsedData);
+      setIntent(parsedData.intent ?? intent);
+      setChatHistory([]);
+      setChatInput('');
+      setChatError(null);
+      setChatOpen(false);
       setAppState('result');
       setCurrentStep(0);
       setIsComplete(false);
@@ -751,12 +1040,10 @@ export default function App() {
         return;
       }
       console.error(err);
-      const rawMessage = err.message || '';
-      const friendlyMessage = rawMessage.includes('did not match the expected pattern')
-        ? 'No se pudo conectar con el servidor. Comprueba tu conexión a internet e inténtalo de nuevo.'
-        : rawMessage ||
-          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.';
-      setError(friendlyMessage);
+      setError(
+        err.message ||
+          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.'
+      );
       setAppState('input');
     } finally {
       abortControllerRef.current = null;
@@ -776,6 +1063,10 @@ export default function App() {
     setCurrentStep(0);
     setIsComplete(false);
     setViewAll(false);
+    setChatOpen(false);
+    setChatHistory([]);
+    setChatInput('');
+    setChatError(null);
     if (!isDesktop) setIsMapOpen(false);
   };
 
@@ -786,15 +1077,22 @@ export default function App() {
     if (!entry) return;
 
     const { session } = entry;
+    const normalized = normalizeMapData(session.data);
+    if (!normalized) return;
     setHistoryStore((prev) => {
       const updated = setActiveId(prev, id);
       saveHistory(updated);
       return updated;
     });
-    setData(session.data);
+    setData(normalized);
+    setIntent(normalized.intent ?? 'understand');
     setCurrentStep(session.currentStep);
     setIsComplete(session.isComplete ?? false);
     setViewAll(session.viewAll ?? false);
+    setChatOpen(false);
+    setChatHistory([]);
+    setChatInput('');
+    setChatError(null);
     setAppState('result');
     setError(null);
     if (!isDesktop) setIsMapOpen(false);
@@ -817,6 +1115,10 @@ export default function App() {
       setCurrentStep(0);
       setIsComplete(false);
       setViewAll(false);
+      setChatOpen(false);
+      setChatHistory([]);
+      setChatInput('');
+      setChatError(null);
     }
   };
 
@@ -828,23 +1130,87 @@ export default function App() {
     });
   };
 
-  const handleRenameHistory = (id: string, title: string) => {
-    setHistoryStore((prev) => {
-      const updated = renameEntry(prev, id, title);
-      saveHistory(updated);
-      if (cloudUser) {
-        const entry = updated.entries.find((item) => item.id === id);
-        if (entry) {
-          void pushHistoryEntry(entry).catch(() =>
-            setSyncError('No se pudo renombrar el mapa en la nube.')
-          );
-        }
-      }
-      return updated;
-    });
+  const handleDownloadCheatsheet = async () => {
+    if (!data || !activeMapId) return;
 
-    if (historyStore.activeId === id) {
-      setData((prev) => (prev ? { ...prev, title } : prev));
+    try {
+      const response = await fetch(apiUrl(`/api/maps/${activeMapId}/cheatsheet.pdf`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ map: data }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error || 'No se pudo generar la ficha.');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${data.title || 'nucleo-cheatsheet'}.pdf`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setChatError(err instanceof Error ? err.message : 'No se pudo generar la ficha PDF.');
+      setChatOpen(true);
+    }
+  };
+
+  const handleChatSubmit = async (presetQuestion?: string) => {
+    if (!data || !activeMapId) return;
+    const question = (presetQuestion || chatInput).trim();
+    if (!question) return;
+
+    const optimisticHistory: ChatTurn[] = [...chatHistory, { role: 'user', text: question }];
+    setChatHistory(optimisticHistory);
+    setChatInput('');
+    setChatBusy(true);
+    setChatError(null);
+    setChatOpen(true);
+
+    try {
+      const response = await fetch(apiUrl(`/api/maps/${activeMapId}/chat`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          map: data,
+          question,
+          history: optimisticHistory,
+        }),
+      });
+      const parsed = await response.json();
+      if (!response.ok) {
+        throw new Error(parsed?.error || 'No se pudo responder a esta pregunta.');
+      }
+
+      const reply = parsed as MapChatResponse;
+      const citationText = reply.citations?.length
+        ? `\n\nFuentes:\n${reply.citations
+            .map((citation) =>
+              `- ${citation.label}: ${citation.locator}${citation.excerpt ? ` — ${citation.excerpt}` : ''}`
+            )
+            .join('\n')}`
+        : '';
+      const limitationsText = reply.limitations?.length
+        ? `\n\nLímites:\n${reply.limitations.map((item) => `- ${item}`).join('\n')}`
+        : '';
+
+      setChatHistory((previous) => [
+        ...previous,
+        {
+          role: 'assistant',
+          text: `${reply.answer}${citationText}${limitationsText}`.trim(),
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
+      setChatError(err instanceof Error ? err.message : 'No se pudo responder a esta pregunta.');
+    } finally {
+      setChatBusy(false);
     }
   };
 
@@ -1027,7 +1393,7 @@ export default function App() {
       className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold border transition-colors ${viewAll ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/20' : 'border-neutral-200 dark:border-white/10 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-white/5'} ${className}`}
     >
       {viewAll ? <List className="w-4 h-4 shrink-0" /> : <Layers className="w-4 h-4 shrink-0" />}
-      {viewAll ? 'Paso a paso' : 'Ver todo'}
+      {viewAll ? 'Paso a paso' : 'Lectura completa'}
     </button>
   );
 
@@ -1265,6 +1631,12 @@ export default function App() {
           }`}
         >
           <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
+          {cloudUser && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-app-canvas"
+              aria-hidden="true"
+            />
+          )}
         </div>
       </button>
       {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}
@@ -1367,7 +1739,7 @@ export default function App() {
                   onClick={() => handleStepClick(0)}
                   className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${currentStep === 0 && !isComplete ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
                 >
-                  <span>Resumen</span>
+                  <span>Idea central</span>
                 </button>
 
                 <div className="w-px h-6 bg-neutral-200 dark:bg-white/5 ml-8 my-1" />
@@ -1382,7 +1754,7 @@ export default function App() {
                       onClick={() => handleStepClick(stepNum)}
                       className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
                     >
-                      <span className="flex items-center gap-3 min-w-0 lg:flex-1 lg:pr-6">
+                      <span className="flex items-center gap-3 min-w-0 lg:flex-1 lg:pr-8">
                         <span className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 dark:bg-white/10 flex items-center justify-center text-xs font-bold text-neutral-500 dark:text-neutral-400">
                           {stepNum}
                         </span>
@@ -1418,7 +1790,6 @@ export default function App() {
             onSelect={handleSelectHistory}
             onDelete={handleDeleteHistory}
             onTogglePin={handleTogglePinHistory}
-            onRename={handleRenameHistory}
           />
         </div>
 
@@ -1447,6 +1818,24 @@ export default function App() {
     </aside>
   );
 
+  const renderReferences = (references?: SourceReference[]) => {
+    if (!references?.length) return null;
+
+    return (
+      <div className="mt-4 flex flex-wrap gap-2">
+        {references.slice(0, 3).map((reference, idx) => (
+          <span
+            key={`${reference.label}-${reference.locator}-${idx}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 dark:border-white/12 px-2.5 py-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-300"
+          >
+            <span className="text-neutral-400 dark:text-neutral-500">{reference.label}</span>
+            <span>{reference.locator}</span>
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   const renderContentBlock = (block: any, idx: number) => {
     const type = String(block.type || 'prose').toLowerCase();
     const textContent = block.text || block.description || block.content || '';
@@ -1454,12 +1843,11 @@ export default function App() {
     switch (type) {
       case 'callout': {
         const kind = String(block.kind || 'info').toLowerCase();
-        const colors: Record<string, string> = {
-          action:
-            'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-900 dark:text-emerald-100',
-          info: 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 text-blue-900 dark:text-blue-100',
-          alert:
-            'border-amber-500 bg-amber-50/50 dark:bg-amber-900/10 text-amber-900 dark:text-amber-100',
+        const label = String(block.label || DEFAULT_CALLOUT_LABELS[kind] || 'Idea clave');
+        const accentStyles: Record<string, string> = {
+          action: 'border-l-indigo-500',
+          info: 'border-l-neutral-400 dark:border-l-neutral-500',
+          alert: 'border-l-amber-500',
         };
         const Icons: Record<string, any> = {
           action: CheckCircle2,
@@ -1470,12 +1858,20 @@ export default function App() {
         return (
           <div
             key={idx}
-            className={`pl-5 py-4 border-l-4 my-8 flex gap-4 items-start content-prose ${colors[kind] || colors.info}`}
+            className={`my-8 border-l-2 pl-5 pr-2 py-1.5 content-prose ${accentStyles[kind] || accentStyles.info}`}
           >
-            <Icon className="w-6 h-6 shrink-0 mt-0.5 opacity-80" />
-            <p className="font-medium text-lg m-0 leading-relaxed text-pretty">
-              {textContent || 'Presta atención a este punto clave.'}
-            </p>
+            <div className="flex gap-4 items-start">
+              <Icon className="w-4 h-4 shrink-0 mt-1 text-neutral-500 dark:text-neutral-400" />
+              <div className="min-w-0">
+                <p className="m-0 text-[11px] font-bold tracking-[0.16em] uppercase text-neutral-500 dark:text-neutral-400">
+                  {label}
+                </p>
+                <p className="mt-2 text-base sm:text-lg leading-[1.7] text-neutral-800 dark:text-neutral-200 text-pretty">
+                  {textContent || 'Presta atención a este punto clave.'}
+                </p>
+                {renderReferences(block.references)}
+              </div>
+            </div>
           </div>
         );
       }
@@ -1506,17 +1902,18 @@ export default function App() {
                 ))}
               </ul>
             )}
+            {renderReferences(block.references)}
           </div>
         );
       default:
         if (!textContent.trim()) return null;
         return (
-          <p
-            key={idx}
-            className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.65] my-8 content-prose text-pretty"
-          >
-            {textContent}
-          </p>
+          <div key={idx} className="my-8 content-prose">
+            <p className="text-neutral-800 dark:text-neutral-200 text-lg sm:text-xl leading-[1.68] text-pretty">
+              {textContent}
+            </p>
+            {renderReferences(block.references)}
+          </div>
         );
     }
   };
@@ -1529,12 +1926,14 @@ export default function App() {
     >
       <div className="mb-16">
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="flex items-center gap-2">
-            <AppIcon className="w-5 h-5 text-[#1A1A1A] dark:text-[#EDEDED]" />
-            <span className="text-sm font-bold tracking-widest uppercase text-[#1A1A1A] dark:text-[#EDEDED]">
-              El Nucleo
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 dark:text-neutral-300">
+            <AppIcon className="w-4 h-4 text-[#1A1A1A] dark:text-[#EDEDED]" />
+            Idea central
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-semibold text-neutral-600 dark:text-neutral-300">
+            <Globe2 className="w-3.5 h-3.5" />
+            {readerModeLabel}
+          </span>
           {totalMinutes !== null && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold border border-indigo-200 dark:border-indigo-500/20">
               <Clock className="w-4 h-4" />
@@ -1548,11 +1947,69 @@ export default function App() {
         <p className="text-xl sm:text-2xl leading-[1.65] text-neutral-700 dark:text-neutral-400 content-prose text-pretty">
           {data?.coreSupport}
         </p>
+        {data?.sourceMetadata && (
+          <div className="mt-8 rounded-2xl border border-neutral-200 dark:border-white/8 bg-white/70 dark:bg-white/[0.03] px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+                Fuente detectada
+              </span>
+              <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+                {data.sourceMetadata.label}
+              </span>
+            </div>
+            {data.sourceMetadata.detected?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {data.sourceMetadata.detected.map((item, index) => (
+                  <span
+                    key={`${item}-${index}`}
+                    className="rounded-full bg-neutral-100 dark:bg-white/[0.05] px-2.5 py-1 text-xs text-neutral-600 dark:text-neutral-300"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
+            {data.coverage?.summary && (
+              <p className="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+                {data.coverage.summary}
+              </p>
+            )}
+            {data.coverage?.notes?.length ? (
+              <div className="mt-3 space-y-2">
+                {data.coverage.notes.slice(0, 3).map((note, index) => (
+                  <div key={`${note.label}-${index}`} className="flex gap-2 text-sm leading-relaxed">
+                    <CircleAlert
+                      className={`mt-0.5 h-4 w-4 shrink-0 ${
+                        note.tone === 'warning'
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-neutral-400 dark:text-neutral-500'
+                      }`}
+                    />
+                    <p className="text-neutral-600 dark:text-neutral-300">
+                      <strong className="text-neutral-800 dark:text-neutral-100">
+                        {note.label}.
+                      </strong>{' '}
+                      {note.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
+        {data?.references?.length ? (
+          <div className="mt-6">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+              Referencias visibles
+            </p>
+            {renderReferences(data.references)}
+          </div>
+        ) : null}
       </div>
 
       <div className={`border-t border-neutral-200 dark:border-white/5 pt-12${viewAll ? ' pb-8' : ''}`}>
         <h3 className="text-xs font-bold tracking-widest uppercase text-neutral-400 mb-10">
-          Desglose Rápido (TL;DR)
+          En 60 segundos
         </h3>
         <div className="grid gap-10">
           {data?.tldr?.map((item: any, i: number) => (
@@ -1608,10 +2065,16 @@ export default function App() {
           <h2 className="heading-step text-[#1A1A1A] dark:text-[#EDEDED] mb-12">
             {step.title}
           </h2>
+          {step.purpose && (
+            <p className="mb-8 max-w-3xl text-base sm:text-lg leading-[1.65] text-neutral-600 dark:text-neutral-300">
+              {step.purpose}
+            </p>
+          )}
 
           <div className="mt-8">
             {step.content?.map((block: any, idx: number) => renderContentBlock(block, idx))}
           </div>
+          {renderReferences(step.references)}
         </div>
       </div>
     );
@@ -1662,7 +2125,7 @@ export default function App() {
               }}
               className="flex-[2] bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white p-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-transform active:scale-[0.98]"
             >
-              <Check className="w-6 h-6" /> Finalizar
+              <Check className="w-6 h-6" /> Completar mapa
             </button>
           )}
         </div>
@@ -1670,39 +2133,164 @@ export default function App() {
     );
   };
 
-  const renderCompletion = () => (
-    <div className="animate-celebrate content-column text-center py-16">
-      <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/15 mb-8">
-        <CheckCircle2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+  const renderChatPanel = () => {
+    if (!chatOpen || !data) return null;
+
+    return (
+      <div className="mt-10 rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-white/[0.03] overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-200 dark:border-white/8 px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Preguntar sobre este mapa
+            </p>
+            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+              Responde solo con el contenido de esta lectura y sus referencias.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setChatOpen(false)}
+            className="rounded-full p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-white/8 dark:hover:text-neutral-100"
+            aria-label="Cerrar panel de preguntas"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="border-b border-neutral-200 dark:border-white/8 px-5 py-4">
+          <div className="flex flex-wrap gap-2">
+            {[
+              data.completionCard?.promptQuestion,
+              '¿Qué no debería pasar por alto?',
+              '¿Qué partes están más conectadas entre sí?',
+            ]
+              .filter(Boolean)
+              .slice(0, 3)
+              .map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => void handleChatSubmit(question)}
+                  className="rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-sm text-neutral-700 transition-colors hover:border-indigo-300 hover:text-indigo-700 dark:text-neutral-200 dark:hover:border-indigo-500/40 dark:hover:text-indigo-300"
+                >
+                  {question}
+                </button>
+              ))}
+          </div>
+        </div>
+
+        <div className="max-h-[26rem] space-y-4 overflow-y-auto px-5 py-5">
+          {chatHistory.length === 0 ? (
+            <p className="text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+              Puedes pedir una aclaración, una lectura más sintética o una explicación de un bloque concreto.
+            </p>
+          ) : (
+            chatHistory.map((turn, index) => (
+              <div
+                key={`${turn.role}-${index}`}
+                className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  turn.role === 'user'
+                    ? 'ml-auto max-w-[85%] bg-indigo-600 text-white'
+                    : 'max-w-[92%] bg-neutral-100 text-neutral-800 dark:bg-white/[0.05] dark:text-neutral-200'
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{turn.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="border-t border-neutral-200 dark:border-white/8 px-5 py-4">
+          <div className="flex gap-3">
+            <textarea
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              rows={2}
+              placeholder="Haz una pregunta sobre este mapa…"
+              className="min-h-[72px] flex-1 resize-none rounded-2xl border border-neutral-200 bg-transparent px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-white/10 dark:text-neutral-100"
+            />
+            <button
+              type="button"
+              onClick={() => void handleChatSubmit()}
+              disabled={chatBusy || !chatInput.trim()}
+              className="inline-flex h-fit items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+            >
+              <MessageSquareText className="h-4 w-4" />
+              {chatBusy ? 'Pensando…' : 'Preguntar'}
+            </button>
+          </div>
+          {chatError && (
+            <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">{chatError}</p>
+          )}
+        </div>
       </div>
-      <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED] mb-4">
-        ¡Lo lograste!
+    );
+  };
+
+  const renderCompletion = () => (
+    <div className="animate-fade-in content-column py-14">
+      <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 dark:text-neutral-300">
+        <CheckCircle2 className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+        Mapa completado
+      </div>
+      <h2 className="mt-6 text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED]">
+        {data?.completionCard?.title || 'Has terminado esta lectura'}
       </h2>
-      <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-2 content-prose mx-auto text-pretty">
-        Has completado los {totalSteps} pasos de este mapa de acción.
+      <p className="mt-4 text-lg sm:text-xl text-neutral-600 dark:text-neutral-300 content-prose text-pretty">
+        {data?.completionCard?.summary || 'Aquí tienes lo esencial para retomarlo con rapidez.'}
       </p>
       {totalMinutes !== null && (
-        <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-10">
+        <p className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
           Tiempo estimado de lectura: ~{totalMinutes} min
         </p>
       )}
-      <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
+
+      {data?.completionCard?.takeaways?.length ? (
+        <div className="mt-10 rounded-3xl border border-neutral-200 dark:border-white/8 bg-white dark:bg-white/[0.03] px-5 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+            Para recordar
+          </p>
+          <ul className="mt-4 space-y-3">
+            {data.completionCard.takeaways.slice(0, 7).map((item, index) => (
+              <li key={`${item}-${index}`} className="flex gap-3 text-base leading-relaxed text-neutral-700 dark:text-neutral-200">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="mt-10 grid gap-3 sm:grid-cols-2">
         <button
           onClick={() => {
             setIsComplete(false);
             handleStepClick(0);
           }}
-          className="px-8 py-4 rounded-xl font-bold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+          className="px-6 py-4 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
         >
-          Repasar desde el inicio
+          Repasar lo esencial
+        </button>
+        <button
+          onClick={() => void handleDownloadCheatsheet()}
+          className="px-6 py-4 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-2"
+        >
+          <Download className="w-4 h-4" /> Guardar ficha PDF
+        </button>
+        <button
+          onClick={() => setChatOpen((open) => !open)}
+          className="px-6 py-4 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors flex items-center justify-center gap-2"
+        >
+          <MessageSquareText className="w-4 h-4" /> Preguntar sobre este mapa
         </button>
         <button
           onClick={resetApp}
-          className="px-8 py-4 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+          className="px-6 py-4 rounded-2xl font-semibold bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
         >
           <SquarePen className="w-5 h-5" /> Nuevo mapa
         </button>
       </div>
+      {renderChatPanel()}
     </div>
   );
 
@@ -1713,9 +2301,56 @@ export default function App() {
       isComplete={isComplete}
       stepProgress={progress}
       progressLabel={progressLabel}
+      mapTitle={data?.title || ''}
       sticky={sticky}
       onToggleSidebar={toggleSidebar}
     />
+  );
+
+  const renderResultHeader = () => (
+    <div className="mb-12">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
+            {data?.title}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-300">
+            <span>{readerModeLabel}</span>
+            <span className="h-1 w-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
+            <span>{getRenderedOutputLanguage(data?.outputLanguage)}</span>
+            {data?.modelUsed && (
+              <>
+                <span className="h-1 w-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
+                <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                  Generado con {data.modelUsed}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {isComplete && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setChatOpen((open) => !open)}
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.05]"
+          >
+            <MessageSquareText className="h-4 w-4" />
+            Preguntar
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDownloadCheatsheet()}
+            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.05]"
+          >
+            <Download className="h-4 w-4" />
+            Ficha PDF
+          </button>
+        </div>
+        )}
+      </div>
+    </div>
   );
 
   const renderInputContent = () => {
@@ -1723,8 +2358,8 @@ export default function App() {
     const composerPlaceholder = uploadedFile?.isImage
       ? 'Añade una indicación (opcional)…'
       : uploadedFile
-        ? 'Archivo adjunto listo para transformar'
-        : 'Pega texto, un enlace de YouTube o una transcripción…';
+        ? 'Archivo adjunto listo para convertir'
+        : 'Pega texto, un artículo, un enlace o una transcripción…';
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
@@ -1736,11 +2371,11 @@ export default function App() {
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >
-          <MenuTwoLines className="w-5 h-5" />
+          <Menu className="w-5 h-5" />
         </button>
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
           <div
-            className="home-hero-copy text-center space-y-2 sm:space-y-3 max-w-lg select-none"
+            className="home-hero-copy text-center space-y-3 sm:space-y-4 max-w-2xl select-none"
             onSelectStart={(e) => e.preventDefault()}
           >
             <div className="inline-flex items-center justify-center mb-1 bg-transparent text-[#1A1A1A] dark:text-[#EDEDED]">
@@ -1749,15 +2384,38 @@ export default function App() {
               />
             </div>
             <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
-              ¿Qué me cuentas?
+              ¿Qué quieres entender?
             </h1>
-            <p className="text-sm sm:text-lg text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              Convierte{' '}
-              <strong className="text-[#1A1A1A] dark:text-[#EDEDED]">
-                caos en mapas de acción
-              </strong>
-              . Directo al punto.
+            <p className="mx-auto max-w-xl text-sm sm:text-lg text-neutral-600 dark:text-neutral-300 leading-relaxed">
+              Pega, adjunta o enlaza una fuente. La convertiré en una lectura clara, completa y hecha para tu objetivo.
             </p>
+            <div className="mx-auto mt-6 grid max-w-3xl gap-3 sm:grid-cols-3">
+              {INTENT_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const isActive = intent === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setIntent(option.id)}
+                    className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+                      isActive
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300'
+                        : 'border-neutral-200 bg-white/80 text-neutral-700 hover:border-neutral-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-neutral-200'
+                    }`}
+                    aria-pressed={isActive}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="text-sm font-semibold">{option.title}</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-current/80">
+                      {option.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {error && (
@@ -1770,7 +2428,7 @@ export default function App() {
 
         <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
           <div className="max-w-3xl mx-auto">
-            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-surface shadow-sm dark:shadow-none">
+            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
               {uploadedFile && (
                 <div className="flex items-center gap-2 px-3 pt-3">
                   {uploadedFile.isImage && uploadedFile.previewUrl ? (
@@ -1898,7 +2556,7 @@ export default function App() {
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
                       >
                         <Paperclip className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
-                        Añadir archivo
+                        Añadir archivo o vídeo
                       </button>
                     </div>
                   )}
@@ -1907,10 +2565,10 @@ export default function App() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.md,.csv,.pdf"
+                  accept=".txt,.md,.csv,.rtf,.json,.html,.xml,.pdf,video/mp4,video/webm,video/quicktime"
                   onChange={handleFileUpload}
                   className="hidden"
-                  title="Subir archivo de texto o PDF"
+                  title="Subir archivo"
                 />
                 <input
                   ref={cameraInputRef}
@@ -1934,13 +2592,16 @@ export default function App() {
                   onClick={handleTransform}
                   disabled={!canSubmit || appState === 'loading'}
                   className="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white transition-all active:scale-95"
-                  title="Transformar"
-                  aria-label="Transformar"
+                  title="Crear lectura"
+                  aria-label="Crear lectura"
                 >
                   <ArrowUp className="w-5 h-5" />
                 </button>
               </div>
             </div>
+            <p className="px-1 py-3 text-center text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Texto, enlaces, PDF, vídeo e imágenes. Recibirás una idea central, un resumen útil y una lectura según tu objetivo.
+            </p>
           </div>
         </div>
       </div>
@@ -1989,16 +2650,7 @@ export default function App() {
                     paddingBottom: `calc(${contentBottomPad}px + env(safe-area-inset-bottom, 0px))`,
                   }}
                 >
-                  <div className="mb-12">
-                    <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
-                      {data?.title}
-                    </h1>
-                    {data?.modelUsed && (
-                      <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
-                        Generado con {data.modelUsed}
-                      </p>
-                    )}
-                  </div>
+                  {renderResultHeader()}
 
                   {currentStep === 0 && renderResumen()}
                   {currentStep > 0 && renderStep(currentStep)}
@@ -2035,16 +2687,7 @@ export default function App() {
                   : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
               }`}
             >
-              <div className="mb-12">
-                <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
-                  {data?.title}
-                </h1>
-                {data?.modelUsed && (
-                  <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
-                    Generado con {data.modelUsed}
-                  </p>
-                )}
-              </div>
+              {renderResultHeader()}
 
               {isComplete ? (
                 renderCompletion()
