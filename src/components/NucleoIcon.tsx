@@ -5,6 +5,8 @@ export const NucleoIcon = ({ className = '' }) => {
   const timeoutRef = useRef<number | null>(null);
   const rawId = useId();
   const glowId = `nucleo-glow-${rawId.replace(/:/g, '')}`;
+  const energySoftId = `nucleo-energy-soft-${rawId.replace(/:/g, '')}`;
+  const energyLightId = `nucleo-energy-light-${rawId.replace(/:/g, '')}`;
 
   const triggerBurst = () => {
     if (timeoutRef.current) {
@@ -88,22 +90,23 @@ export const NucleoIcon = ({ className = '' }) => {
           fill: none;
           stroke: currentColor;
           stroke-linecap: round;
-          stroke-dasharray: 24 168;
+          stroke-linejoin: round;
+          stroke-dasharray: 2 1 4 1 6 1 6 1 4 1 2 162;
           animation-name: nucleo-energy-flow;
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
 
         .nucleo-energy-glow {
-          stroke-width: 7;
-          opacity: 0.09;
-          filter: url(#${glowId});
+          stroke-width: 11;
+          opacity: 0.22;
+          filter: url(#${energySoftId});
         }
 
         .nucleo-energy {
-          stroke-width: 2.6;
-          opacity: 1;
-          filter: drop-shadow(0 0 8px currentColor);
+          stroke-width: 1.8;
+          opacity: 0.62;
+          filter: url(#${energyLightId});
         }
 
         .energy-1 .nucleo-energy,
@@ -118,7 +121,7 @@ export const NucleoIcon = ({ className = '' }) => {
         }
 
         .energy-2 .nucleo-energy-glow {
-          opacity: 0.07;
+          opacity: 0.18;
         }
 
         .energy-3 .nucleo-energy,
@@ -129,7 +132,7 @@ export const NucleoIcon = ({ className = '' }) => {
         }
 
         .energy-3 .nucleo-energy-glow {
-          opacity: 0.06;
+          opacity: 0.15;
         }
 
         .nucleo-burst-ring {
@@ -216,8 +219,8 @@ export const NucleoIcon = ({ className = '' }) => {
 
           .nucleo-energy,
           .nucleo-energy-glow {
-            stroke-dasharray: 24 168;
-            opacity: 0.45;
+            stroke-dasharray: 2 1 4 1 6 1 6 1 4 1 2 162;
+            opacity: 0.35;
           }
         }
       `}</style>
@@ -226,6 +229,16 @@ export const NucleoIcon = ({ className = '' }) => {
         <defs>
           <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id={energySoftId} x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="4.2" />
+          </filter>
+          <filter id={energyLightId} x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
