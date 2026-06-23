@@ -60,7 +60,7 @@ export const NucleoIcon = ({ className = '' }) => {
         .nucleo-orbit {
           fill: none;
           stroke: currentColor;
-          stroke-width: 1.5; /* Más gruesas para que destaquen */
+          stroke-width: 2; /* Más gruesas para que destaquen */
           opacity: 0.25;
         }
 
