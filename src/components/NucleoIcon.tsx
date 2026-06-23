@@ -67,9 +67,7 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-halo {
           fill: currentColor;
-          opacity: 0.075;
-          transform-origin: 50px 50px;
-          transform-box: fill-box;
+          opacity: 0.08;
           animation: nucleo-halo-breathe 4.2s ease-in-out infinite;
         }
 
@@ -150,8 +148,6 @@ export const NucleoIcon = ({ className = '' }) => {
           stroke: currentColor;
           stroke-width: 2;
           opacity: 0;
-          transform-origin: 50px 50px;
-          transform-box: fill-box;
         }
 
         .nucleo-wrapper.is-bursting .nucleo-burst-ring {
@@ -196,12 +192,10 @@ export const NucleoIcon = ({ className = '' }) => {
 
         @keyframes nucleo-halo-breathe {
           0%, 100% {
-            transform: scale(0.9);
-            opacity: 0.055;
+            opacity: 0.05;
           }
           50% {
-            transform: scale(1.2);
-            opacity: 0.14;
+            opacity: 0.12;
           }
         }
 
@@ -216,12 +210,12 @@ export const NucleoIcon = ({ className = '' }) => {
 
         @keyframes nucleo-burst-ring {
           0% {
-            transform: scale(0.55);
-            opacity: 0.42;
+            opacity: 0.38;
+            stroke-width: 2;
           }
           100% {
-            transform: scale(1.55);
             opacity: 0;
+            stroke-width: 0.75;
           }
         }
 
@@ -256,8 +250,8 @@ export const NucleoIcon = ({ className = '' }) => {
 
       <svg viewBox="0 0 100 100" className="nucleo-svg" aria-hidden="true">
         <defs>
-          <filter id={glowId} x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="2.8" result="blur" />
+          <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
