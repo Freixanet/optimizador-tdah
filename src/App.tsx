@@ -37,6 +37,11 @@ import {
   type ModelPreference,
 } from './modelPreference';
 import {
+  APP_VARIANT_OPTIONS,
+  getCurrentDeploymentVariant,
+  switchAppVariant,
+} from './appVariant';
+import {
   createEntry,
   deleteEntry,
   getActiveEntry,
@@ -746,10 +751,12 @@ export default function App() {
         return;
       }
       console.error(err);
-      setError(
-        err.message ||
-          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.'
-      );
+      const rawMessage = err.message || '';
+      const friendlyMessage = rawMessage.includes('did not match the expected pattern')
+        ? 'No se pudo conectar con el servidor. Comprueba tu conexión a internet e inténtalo de nuevo.'
+        : rawMessage ||
+          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.';
+      setError(friendlyMessage);
       setAppState('input');
     } finally {
       abortControllerRef.current = null;
@@ -1070,6 +1077,45 @@ export default function App() {
               </button>
             );
           })}
+        </div>
+        <div className="border-t border-neutral-200 dark:border-white/10">
+          <div className="px-3 py-2.5">
+            <p className="text-[10px] font-bold tracking-widest uppercase text-neutral-400">Experiencia</p>
+          </div>
+          <div className="py-1">
+            {APP_VARIANT_OPTIONS.map((option) => {
+              const isActive = getCurrentDeploymentVariant() === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  disabled={appState === 'loading'}
+                  onClick={() => {
+                    if (isActive) return;
+                    setProfileMenuOpen(false);
+                    switchAppVariant(option.id);
+                  }}
+                  className={`w-full text-left px-3 py-2.5 flex items-start gap-2 transition-colors disabled:opacity-50 ${
+                    isActive
+                      ? 'bg-indigo-50 dark:bg-indigo-500/10'
+                      : 'hover:bg-neutral-50 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                      {option.label}
+                    </span>
+                    <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                      {option.hint}
+                    </span>
+                  </span>
+                  {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="border-t border-neutral-200 dark:border-white/10 py-1">
           {isCloudSyncConfigured && !cloudUser && (

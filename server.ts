@@ -18,6 +18,8 @@ function allowedOrigins() {
     [
       process.env.APP_URL,
       ...(process.env.ALLOWED_ORIGINS ?? "").split(","),
+      "https://optimizador-tdah-production.up.railway.app",
+      "https://nucleo-comprension-production.up.railway.app",
       "capacitor://localhost",
       "http://localhost",
       "https://localhost",
