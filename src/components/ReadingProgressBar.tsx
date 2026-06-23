@@ -14,7 +14,6 @@ type ReadingProgressBarProps = {
   isComplete: boolean;
   stepProgress: number;
   progressLabel: string;
-  mapTitle: string;
   sticky?: boolean;
   onToggleSidebar: () => void;
 };
@@ -25,7 +24,6 @@ function ReadingProgressBar({
   isComplete,
   stepProgress,
   progressLabel,
-  mapTitle,
   sticky = false,
   onToggleSidebar,
 }: ReadingProgressBarProps) {
@@ -108,9 +106,6 @@ function ReadingProgressBar({
             <Menu className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <p className="truncate text-[11px] sm:text-xs font-bold uppercase tracking-[0.14em] text-neutral-500 dark:text-neutral-400">
-              {mapTitle}
-            </p>
             <p className="truncate text-xs sm:text-sm font-bold text-neutral-800 dark:text-neutral-100">
               {progressLabel}
             </p>

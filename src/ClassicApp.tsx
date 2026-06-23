@@ -1534,12 +1534,6 @@ export default function ClassicApp() {
               El Nucleo
             </span>
           </div>
-          {totalMinutes !== null && (
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-              <Clock className="w-4 h-4" aria-hidden="true" />
-              ~{totalMinutes} min
-            </span>
-          )}
         </div>
         <h2 className="heading-core text-[#1A1A1A] dark:text-[#EDEDED] mb-6">
           <BalancedText>{data?.coreIdea}</BalancedText>
@@ -1677,14 +1671,9 @@ export default function ClassicApp() {
       <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED] mb-4">
         ¡Lo lograste!
       </h2>
-      <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-2 content-prose mx-auto text-pretty">
+      <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-10 content-prose mx-auto text-pretty">
         Has completado los {totalSteps} pasos de este mapa de acción.
       </p>
-      {totalMinutes !== null && (
-        <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-10">
-          Tiempo estimado de lectura: ~{totalMinutes} min
-        </p>
-      )}
       <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
         <button
           onClick={() => {
@@ -1705,6 +1694,20 @@ export default function ClassicApp() {
     </div>
   );
 
+  const renderMapTitle = (showReadingTime = false) => (
+    <div className="mb-12">
+      <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
+        {data?.title}
+      </h1>
+      {showReadingTime && totalMinutes !== null && (
+        <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+          <Clock className="w-4 h-4" aria-hidden="true" />
+          ~{totalMinutes} min
+        </p>
+      )}
+    </div>
+  );
+
   const renderProgressBar = (sticky = false) => (
     <ReadingProgressBar
       active={appState === 'result'}
@@ -1712,7 +1715,6 @@ export default function ClassicApp() {
       isComplete={isComplete}
       stepProgress={progress}
       progressLabel={progressLabel}
-      mapTitle={data?.title || ''}
       sticky={sticky}
       onToggleSidebar={toggleSidebar}
     />
@@ -1987,16 +1989,7 @@ export default function ClassicApp() {
                     paddingBottom: `calc(${contentBottomPad}px + env(safe-area-inset-bottom, 0px))`,
                   }}
                 >
-                  <div className="mb-12">
-                    <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
-                      {data?.title}
-                    </h1>
-                    {data?.modelUsed && (
-                      <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
-                        Generado con {data.modelUsed}
-                      </p>
-                    )}
-                  </div>
+                  {currentStep === 0 && renderMapTitle(true)}
 
                   {currentStep === 0 && renderResumen()}
                   {currentStep > 0 && renderStep(currentStep)}
@@ -2033,16 +2026,7 @@ export default function ClassicApp() {
                   : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
               }`}
             >
-              <div className="mb-12">
-                <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
-                  {data?.title}
-                </h1>
-                {data?.modelUsed && (
-                  <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500 font-medium tracking-wide">
-                    Generado con {data.modelUsed}
-                  </p>
-                )}
-              </div>
+              {renderMapTitle(!isComplete)}
 
               {isComplete ? (
                 renderCompletion()

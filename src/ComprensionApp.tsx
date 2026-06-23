@@ -1917,12 +1917,6 @@ export default function ComprensionApp() {
               Idea central
             </span>
           </div>
-          {totalMinutes !== null && (
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-              <Clock className="w-4 h-4" aria-hidden="true" />
-              ~{totalMinutes} min
-            </span>
-          )}
         </div>
         <h2 className="heading-core text-[#1A1A1A] dark:text-[#EDEDED] mb-6">
           <BalancedText>{data?.coreIdea}</BalancedText>
@@ -2222,11 +2216,6 @@ export default function ComprensionApp() {
       <p className="mt-4 text-lg sm:text-xl text-neutral-600 dark:text-neutral-300 content-prose text-pretty">
         {data?.completionCard?.summary || 'Aquí tienes lo esencial para retomarlo con rapidez.'}
       </p>
-      {totalMinutes !== null && (
-        <p className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
-          Tiempo estimado de lectura: ~{totalMinutes} min
-        </p>
-      )}
 
       {data?.completionCard?.takeaways?.length ? (
         <div className="mt-10 rounded-3xl border border-neutral-200 dark:border-white/8 bg-white dark:bg-white/[0.03] px-5 py-5">
@@ -2284,20 +2273,20 @@ export default function ComprensionApp() {
       isComplete={isComplete}
       stepProgress={progress}
       progressLabel={progressLabel}
-      mapTitle={data?.title || ''}
       sticky={sticky}
       onToggleSidebar={toggleSidebar}
     />
   );
 
-  const renderResultHeader = () => (
+  const renderResultHeader = (showReadingTime = false) => (
     <div className="mb-12">
       <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
         {data?.title}
       </h1>
-      {data?.modelUsed && (
-        <p className="mt-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-300">
-          Generado con {data.modelUsed}
+      {showReadingTime && totalMinutes !== null && (
+        <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+          <Clock className="w-4 h-4" aria-hidden="true" />
+          ~{totalMinutes} min
         </p>
       )}
     </div>
@@ -2595,7 +2584,7 @@ export default function ComprensionApp() {
                     paddingBottom: `calc(${contentBottomPad}px + env(safe-area-inset-bottom, 0px))`,
                   }}
                 >
-                  {renderResultHeader()}
+                  {currentStep === 0 && renderResultHeader(true)}
 
                   {currentStep === 0 && renderResumen()}
                   {currentStep > 0 && renderStep(currentStep)}
@@ -2632,7 +2621,7 @@ export default function ComprensionApp() {
                   : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
               }`}
             >
-              {renderResultHeader()}
+              {renderResultHeader(!isComplete)}
 
               {isComplete ? (
                 renderCompletion()
