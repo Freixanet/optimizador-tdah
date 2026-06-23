@@ -1879,9 +1879,6 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <p className="px-1 py-3 text-center text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Texto, enlaces, archivos e imágenes. Recibirás una idea central, un resumen útil y una guía de lectura.
-            </p>
           </div>
         </div>
       </div>
