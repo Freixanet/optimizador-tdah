@@ -35,7 +35,7 @@ import {
 import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
-import LivingNucleusIcon from './components/LivingNucleusIcon';
+import NucleoIcon from './components/NucleoIcon';
 import LoadingState from './components/LoadingState';
 import ReadingProgressBar from './components/ReadingProgressBar';
 import type {
@@ -2380,7 +2380,7 @@ export default function ComprensionApp() {
             onSelectStart={(e) => e.preventDefault()}
           >
             <div className="inline-flex items-center justify-center mb-1">
-              <LivingNucleusIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+              <NucleoIcon className="text-[#1A1A1A] dark:text-[#EDEDED]" />
             </div>
             <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
               ¿Qué quieres entender?

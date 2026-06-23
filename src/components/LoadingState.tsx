@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import AppIcon from './AppIcon';
-import LivingNucleusIcon from './LivingNucleusIcon';
+import NucleoIcon from './NucleoIcon';
 
 const PHASES = [
   'Leyendo la fuente',
@@ -61,7 +61,7 @@ function AppIconGlow({ reduceMotion }: { reduceMotion: boolean | null }) {
           aria-hidden="true"
         />
       )}
-      <LivingNucleusIcon className={`relative w-5 h-5 ${PHASE_TEXT}`} interactive={false} />
+      <NucleoIcon className={`scale-[0.32] origin-center ${PHASE_TEXT}`} />
     </span>
   );
 }
