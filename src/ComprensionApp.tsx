@@ -29,7 +29,6 @@ import {
   BookOpen,
   GraduationCap,
   ListChecks,
-  Globe2,
   CircleAlert,
 } from 'lucide-react';
 import { apiUrl } from './apiBase';
@@ -213,13 +212,6 @@ function getIntentLabel(intent: MapIntent | undefined) {
 
 function getResolvedOutputLanguage() {
   return 'es';
-}
-
-function getRenderedOutputLanguage(language: string | undefined) {
-  if (language?.toLowerCase().startsWith('en')) return 'English';
-  if (language?.toLowerCase().startsWith('es')) return 'Español';
-  if (typeof navigator === 'undefined') return 'Idioma del usuario';
-  return navigator.language.startsWith('es') ? 'Español' : 'Idioma del usuario';
 }
 
 function normalizeReferences(input: unknown): SourceReference[] {
@@ -1918,14 +1910,12 @@ export default function ComprensionApp() {
     >
       <div className="mb-16">
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 dark:text-neutral-300">
-            <AppIcon className="w-4 h-4 text-[#1A1A1A] dark:text-[#EDEDED]" />
-            Idea central
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-semibold text-neutral-600 dark:text-neutral-300">
-            <Globe2 className="w-3.5 h-3.5" />
-            {readerModeLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <AppIcon className="w-5 h-5 text-[#1A1A1A] dark:text-[#EDEDED]" />
+            <span className="text-sm font-bold tracking-widest uppercase text-[#1A1A1A] dark:text-[#EDEDED]">
+              Idea central
+            </span>
+          </div>
           {totalMinutes !== null && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold border border-indigo-200 dark:border-indigo-500/20">
               <Clock className="w-4 h-4" />
@@ -2301,47 +2291,14 @@ export default function ComprensionApp() {
 
   const renderResultHeader = () => (
     <div className="mb-12">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
-            {data?.title}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-neutral-500 dark:text-neutral-300">
-            <span>{readerModeLabel}</span>
-            <span className="h-1 w-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-            <span>{getRenderedOutputLanguage(data?.outputLanguage)}</span>
-            {data?.modelUsed && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-                <span className="font-medium text-neutral-600 dark:text-neutral-300">
-                  Generado con {data.modelUsed}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {isComplete && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setChatOpen((open) => !open)}
-            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.05]"
-          >
-            <MessageSquareText className="h-4 w-4" />
-            Preguntar
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDownloadCheatsheet()}
-            className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/[0.05]"
-          >
-            <Download className="h-4 w-4" />
-            Ficha PDF
-          </button>
-        </div>
-        )}
-      </div>
+      <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
+        {data?.title}
+      </h1>
+      {data?.modelUsed && (
+        <p className="mt-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-300">
+          Generado con {data.modelUsed}
+        </p>
+      )}
     </div>
   );
 
