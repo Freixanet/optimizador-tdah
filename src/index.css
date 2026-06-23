@@ -96,7 +96,6 @@
   }
 
   .nucleus-living {
-    --nucleus-orbit-duration: 18s;
     transform: translateZ(0);
   }
 
@@ -113,40 +112,16 @@
     opacity: 0.55;
   }
 
-  .nucleus-living__orbit {
-    transform-box: fill-box;
-    transform-origin: 12px 12px;
-    animation: nucleus-orbit-spin var(--nucleus-orbit-duration) linear infinite;
-    will-change: transform;
-  }
-
   .nucleus-living__ring {
     opacity: 0.88;
   }
 
   .nucleus-living__electron {
-    will-change: transform;
-  }
-
-  .nucleus-living__electron--counter {
-    animation: nucleus-electron-counter var(--nucleus-orbit-duration) linear infinite;
-    transform-origin: 12px 12px;
-  }
-
-  .nucleus-living__core-wrap {
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: nucleus-core-breathe 3.4s ease-in-out infinite;
-  }
-
-  .nucleus-living__core {
-    opacity: 0.96;
+    opacity: 0.85;
   }
 
   .nucleus-living__burst-ring {
     opacity: 0;
-    transform-box: fill-box;
-    transform-origin: center;
     pointer-events: none;
   }
 
@@ -158,18 +133,6 @@
 
   .nucleus-living--burst {
     transform: scale(1.06);
-  }
-
-  .nucleus-living--burst .nucleus-living__orbit {
-    animation-duration: calc(var(--nucleus-orbit-duration) * 0.32);
-  }
-
-  .nucleus-living--burst .nucleus-living__electron--counter {
-    animation-duration: calc(var(--nucleus-orbit-duration) * 0.32);
-  }
-
-  .nucleus-living--burst .nucleus-living__core-wrap {
-    animation-duration: 0.55s;
   }
 
   .nucleus-living--burst .nucleus-living__ambient {
@@ -185,12 +148,6 @@
     animation: none;
   }
 
-  .nucleus-living--reduced .nucleus-living__orbit,
-  .nucleus-living--reduced .nucleus-living__core-wrap,
-  .nucleus-living--reduced .nucleus-living__electron--counter {
-    animation: none;
-  }
-
   .nucleus-living:not(.nucleus-living--reduced) .nucleus-living__ambient {
     animation: nucleus-ambient-pulse 3.4s ease-in-out infinite;
   }
@@ -203,36 +160,6 @@
   .animate-atom-rotate-fast {
     animation: atom-rotate 5s linear infinite;
     transform-origin: center;
-  }
-}
-
-@keyframes nucleus-orbit-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes nucleus-electron-counter {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(-360deg);
-  }
-}
-
-@keyframes nucleus-core-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.94;
-  }
-  50% {
-    transform: scale(1.07);
-    opacity: 1;
   }
 }
 
@@ -265,27 +192,22 @@
 
 @keyframes nucleus-burst-ring {
   0% {
-    opacity: 0.55;
-    transform: scale(1);
+    opacity: 0.45;
     stroke-width: 0.55;
   }
   100% {
     opacity: 0;
-    transform: scale(1.85);
-    stroke-width: 0.1;
+    stroke-width: 0.15;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nucleus-living__orbit,
-  .nucleus-living__core-wrap,
-  .nucleus-living__electron--counter,
-  .nucleus-living__ambient {
-    animation: none !important;
-  }
-
   .nucleus-living--burst {
     transform: none;
+  }
+
+  .nucleus-living__ambient {
+    animation: none !important;
   }
 }
 

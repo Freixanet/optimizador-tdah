@@ -8,10 +8,13 @@ type LivingNucleusIconProps = {
 } & Omit<SVGProps<SVGSVGElement>, 'className'>;
 
 const ORBITS = [
-  { tilt: 0, duration: '18s', electronOpacity: 0.9 },
-  { tilt: 60, duration: '24s', electronOpacity: 0.75 },
-  { tilt: 120, duration: '30s', electronOpacity: 0.65 },
+  { tilt: 0, duration: 18, electronOpacity: 0.92 },
+  { tilt: 60, duration: 24, electronOpacity: 0.78 },
+  { tilt: 120, duration: 30, electronOpacity: 0.68 },
 ] as const;
+
+const CENTER = 12;
+const BURST_MS = 700;
 
 export default function LivingNucleusIcon({
   className = 'w-10 h-10',
@@ -22,28 +25,38 @@ export default function LivingNucleusIcon({
   const reduceMotion = useReducedMotion();
   const uid = useId().replace(/:/g, '');
   const rootRef = useRef<HTMLSpanElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const burstTimerRef = useRef<number | null>(null);
 
   const triggerBurst = useCallback(() => {
     if (reduceMotion || !interactive) return;
     const root = rootRef.current;
-    if (!root) return;
+    const svg = svgRef.current;
+    if (!root || !svg) return;
 
     root.classList.remove('nucleus-living--burst');
     void root.offsetWidth;
     root.classList.add('nucleus-living--burst');
+
+    svg.querySelectorAll<SVGAnimateTransformElement>('animateTransform[data-orbit]').forEach((node) => {
+      const base = Number(node.dataset.baseDur || node.getAttribute('dur')?.replace('s', '') || 18);
+      node.setAttribute('dur', `${Math.max(base * 0.28, 4)}s`);
+    });
 
     if (burstTimerRef.current !== null) {
       window.clearTimeout(burstTimerRef.current);
     }
     burstTimerRef.current = window.setTimeout(() => {
       root.classList.remove('nucleus-living--burst');
+      svg.querySelectorAll<SVGAnimateTransformElement>('animateTransform[data-orbit]').forEach((node) => {
+        const base = node.dataset.baseDur;
+        if (base) node.setAttribute('dur', `${base}s`);
+      });
       burstTimerRef.current = null;
-    }, 700);
+    }, BURST_MS);
   }, [interactive, reduceMotion]);
 
   const glowFilterId = `nucleus-glow-${uid}`;
-  const electronFilterId = `nucleus-electron-${uid}`;
 
   const content = (
     <span
@@ -59,6 +72,7 @@ export default function LivingNucleusIcon({
     >
       <span className="nucleus-living__ambient" aria-hidden="true" />
       <svg
+        ref={svgRef}
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -67,15 +81,8 @@ export default function LivingNucleusIcon({
         {...props}
       >
         <defs>
-          <filter id={glowFilterId} x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="1.1" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id={electronFilterId} x="-120%" y="-120%" width="340%" height="340%">
-            <feGaussianBlur stdDeviation="0.55" result="blur" />
+          <filter id={glowFilterId} x="-70%" y="-70%" width="240%" height="240%">
+            <feGaussianBlur stdDeviation="0.9" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -83,15 +90,24 @@ export default function LivingNucleusIcon({
           </filter>
         </defs>
 
-        {ORBITS.map((orbit, index) => (
-          <g key={orbit.tilt} transform={`rotate(${orbit.tilt} 12 12)`}>
-            <g
-              className="nucleus-living__orbit"
-              style={{ ['--nucleus-orbit-duration' as string]: orbit.duration }}
-            >
+        {ORBITS.map((orbit) => (
+          <g key={orbit.tilt} transform={`rotate(${orbit.tilt} ${CENTER} ${CENTER})`}>
+            <g>
+              {!reduceMotion && (
+                <animateTransform
+                  data-orbit="true"
+                  data-base-dur={orbit.duration}
+                  attributeName="transform"
+                  type="rotate"
+                  from={`0 ${CENTER} ${CENTER}`}
+                  to={`360 ${CENTER} ${CENTER}`}
+                  dur={`${orbit.duration}s`}
+                  repeatCount="indefinite"
+                />
+              )}
               <ellipse
-                cx="12"
-                cy="12"
+                cx={CENTER}
+                cy={CENTER}
                 rx="9.2"
                 ry="3.7"
                 stroke="currentColor"
@@ -101,38 +117,44 @@ export default function LivingNucleusIcon({
               />
               <circle
                 cx="21.2"
-                cy="12"
+                cy={CENTER}
                 r="0.55"
                 fill="currentColor"
-                filter={`url(#${electronFilterId})`}
                 className="nucleus-living__electron"
                 style={{ opacity: orbit.electronOpacity }}
               />
-              {index === 0 && (
-                <circle
-                  cx="2.8"
-                  cy="12"
-                  r="0.45"
-                  fill="currentColor"
-                  filter={`url(#${electronFilterId})`}
-                  className="nucleus-living__electron nucleus-living__electron--counter"
-                  style={{ opacity: 0.5 }}
-                />
-              )}
             </g>
           </g>
         ))}
 
-        <g className="nucleus-living__core-wrap" filter={`url(#${glowFilterId})`}>
-          <circle cx="12" cy="12" r="2.75" fill="currentColor" className="nucleus-living__core" />
+        <g filter={`url(#${glowFilterId})`}>
+          <circle cx={CENTER} cy={CENTER} r="2.75" fill="currentColor" className="nucleus-living__core">
+            {!reduceMotion && (
+              <>
+                <animate
+                  attributeName="r"
+                  values="2.75;2.95;2.75"
+                  dur="3.4s"
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0.92;1;0.92"
+                  dur="3.4s"
+                  repeatCount="indefinite"
+                />
+              </>
+            )}
+          </circle>
         </g>
+
         <circle
-          cx="12"
-          cy="12"
+          cx={CENTER}
+          cy={CENTER}
           r="2.75"
           fill="none"
           stroke="currentColor"
-          strokeWidth="0.6"
+          strokeWidth="0.55"
           className="nucleus-living__burst-ring"
           aria-hidden="true"
         />
