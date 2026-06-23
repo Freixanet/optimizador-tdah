@@ -21,10 +21,6 @@ export default function ProfileAvatar({ email, avatarUrl, signedIn = false }: Pr
         showPhoto
           ? 'bg-neutral-200 dark:bg-neutral-800'
           : 'bg-gradient-to-br from-indigo-500 to-violet-600'
-      } ${
-        signedIn
-          ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-app-canvas'
-          : ''
       }`}
     >
       {showPhoto ? (
