@@ -28,6 +28,8 @@ import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import NucleoIcon from './components/NucleoIcon';
+import ProfileAvatar from './components/ProfileAvatar';
+import { toCloudUserProfile, type CloudUserProfile } from './cloudUserProfile';
 import LoadingState from './components/LoadingState';
 import MenuTwoLines from './components/MenuTwoLines';
 import ReadingProgressBar from './components/ReadingProgressBar';
@@ -249,7 +251,7 @@ export default function ClassicApp() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [modelPreference, setModelPreference] = useState<ModelPreference>(getInitialModelPreference);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [cloudUser, setCloudUser] = useState<{ email?: string | null } | null>(null);
+  const [cloudUser, setCloudUser] = useState<CloudUserProfile | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -315,8 +317,8 @@ export default function ClassicApp() {
   React.useEffect(() => {
     if (!supabase) return;
 
-    const hydrateCloudHistory = async (user: { email?: string | null } | null) => {
-      setCloudUser(user);
+    const hydrateCloudHistory = async (user: Parameters<typeof toCloudUserProfile>[0] | null) => {
+      setCloudUser(user ? toCloudUserProfile(user) : null);
       if (!user) return;
       try {
         await migrateLocalHistory(historyStoreRef.current);
@@ -1242,7 +1244,6 @@ export default function ClassicApp() {
     );
   };
 
-  const profileInitial = cloudUser?.email?.[0]?.toUpperCase() ?? 'M';
   const profileTitle = cloudUser
     ? `Sincronizado como ${cloudUser.email ?? 'tu cuenta'}`
     : 'Cuenta y ajustes';
@@ -1260,13 +1261,11 @@ export default function ClassicApp() {
         title={profileTitle}
         aria-label={profileTitle}
       >
-        <div
-          className={`relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm ${
-            cloudUser ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-app-canvas' : ''
-          }`}
-        >
-          <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
-        </div>
+        <ProfileAvatar
+          email={cloudUser?.email}
+          avatarUrl={cloudUser?.avatarUrl}
+          signedIn={Boolean(cloudUser)}
+        />
       </button>
       {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}
     </div>

@@ -36,6 +36,7 @@ import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import NucleoIcon from './components/NucleoIcon';
+import ProfileAvatar from './components/ProfileAvatar';
 import LoadingState from './components/LoadingState';
 import ReadingProgressBar from './components/ReadingProgressBar';
 import type {
@@ -84,6 +85,7 @@ import {
   signOut,
 } from './cloudHistory';
 import { isCloudSyncConfigured, supabase } from './supabase';
+import { toCloudUserProfile, type CloudUserProfile } from './cloudUserProfile';
 
 type UploadedFile = {
   name: string;
@@ -467,7 +469,7 @@ export default function ComprensionApp() {
   const [modelPreference, setModelPreference] = useState<ModelPreference>(getInitialModelPreference);
   const [intent, setIntent] = useState<MapIntent>(initialActiveData?.intent ?? 'understand');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [cloudUser, setCloudUser] = useState<{ email?: string | null } | null>(null);
+  const [cloudUser, setCloudUser] = useState<CloudUserProfile | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -541,8 +543,8 @@ export default function ComprensionApp() {
   React.useEffect(() => {
     if (!supabase) return;
 
-    const hydrateCloudHistory = async (user: { email?: string | null } | null) => {
-      setCloudUser(user);
+    const hydrateCloudHistory = async (user: Parameters<typeof toCloudUserProfile>[0] | null) => {
+      setCloudUser(user ? toCloudUserProfile(user) : null);
       if (!user) return;
       try {
         await migrateLocalHistory(historyStoreRef.current);
@@ -1608,7 +1610,6 @@ export default function ComprensionApp() {
     );
   };
 
-  const profileInitial = cloudUser?.email?.[0]?.toUpperCase() ?? 'M';
   const profileTitle = cloudUser
     ? `Sincronizado como ${cloudUser.email ?? 'tu cuenta'}`
     : 'Cuenta y ajustes';
@@ -1626,19 +1627,11 @@ export default function ComprensionApp() {
         title={profileTitle}
         aria-label={profileTitle}
       >
-        <div
-          className={`relative w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 shadow-sm ${
-            cloudUser ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-50 dark:ring-offset-app-canvas' : ''
-          }`}
-        >
-          <span className="text-xs font-bold text-white leading-none">{profileInitial}</span>
-          {cloudUser && (
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-neutral-50 dark:border-app-canvas"
-              aria-hidden="true"
-            />
-          )}
-        </div>
+        <ProfileAvatar
+          email={cloudUser?.email}
+          avatarUrl={cloudUser?.avatarUrl}
+          signedIn={Boolean(cloudUser)}
+        />
       </button>
       {renderProfileMenu(variant === 'compact' ? 'right' : 'up')}
     </div>
