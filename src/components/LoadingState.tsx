@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import AppIcon from './AppIcon';
 import NucleoIcon from './NucleoIcon';
 
 const PHASES = [
@@ -175,8 +174,7 @@ export default function LoadingState({ className = '' }: LoadingStateProps) {
 
       <div className="content-column">
         <div className="mb-16">
-          <div className="flex items-center gap-2 mb-6">
-            <AppIcon className="w-5 h-5 text-neutral-300 dark:text-neutral-600" aria-hidden="true" />
+          <div className="mb-6">
             <ShimmerBlock className="h-3 w-24" reduceMotion={reduceMotion} shimmerDelay={0.15} />
           </div>
 

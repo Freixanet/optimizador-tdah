@@ -33,6 +33,7 @@ import { toCloudUserProfile, type CloudUserProfile } from './cloudUserProfile';
 import LoadingState from './components/LoadingState';
 import MenuTwoLines from './components/MenuTwoLines';
 import ReadingProgressBar from './components/ReadingProgressBar';
+import BalancedText from './components/BalancedText';
 import {
   getInitialModelPreference,
   MODEL_OPTIONS,
@@ -1541,7 +1542,7 @@ export default function ClassicApp() {
           )}
         </div>
         <h2 className="heading-core text-[#1A1A1A] dark:text-[#EDEDED] mb-6">
-          {data?.coreIdea}
+          <BalancedText>{data?.coreIdea}</BalancedText>
         </h2>
         <p className="text-xl sm:text-2xl leading-[1.65] text-neutral-700 dark:text-neutral-400 content-prose text-pretty">
           {data?.coreSupport}

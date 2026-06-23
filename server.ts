@@ -194,9 +194,13 @@ const schema = {
     coreIdea: {
       type: Type.STRING,
       description:
-        "La idea central del contenido. Debe ser precisa, adulta y breve, en una sola frase.",
+        "La idea central del contenido. Una sola frase muy breve (idealmente 12-18 palabras y como máximo 120 caracteres), precisa y adulta, pensada para leerse de un vistazo.",
     },
-    coreSupport: { type: Type.STRING },
+    coreSupport: {
+      type: Type.STRING,
+      description:
+        "Una frase de apoyo breve que expande la idea central sin repetirla. Máximo 160 caracteres.",
+    },
     tldr: {
       type: Type.ARRAY,
       items: {
@@ -516,6 +520,7 @@ function buildTransformPrompt({
     sourceLabel ? `Etiqueta visible de la fuente: ${sourceLabel}.` : "",
     formatGuide,
     "Genera una lectura fiel, útil a la primera y sin tono infantil.",
+    "La coreIdea debe ser una frase corta y memorable; evita párrafos, matices largos o dos ideas en una.",
     "En 'tldr' entrega de 3 a 6 puntos.",
     "En 'knowledgeSections' resume las secciones mayores.",
     "En 'steps' organiza el recorrido completo de lectura.",
