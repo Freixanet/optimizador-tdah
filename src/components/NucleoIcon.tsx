@@ -67,8 +67,7 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-halo {
           fill: currentColor;
-          opacity: 0.08;
-          animation: nucleo-halo-breathe 4.2s ease-in-out infinite;
+          opacity: 0.1;
         }
 
         .nucleo-core {
@@ -79,9 +78,9 @@ export const NucleoIcon = ({ className = '' }) => {
         .nucleo-orbit {
           fill: none;
           stroke: currentColor;
-          stroke-width: 2.35;
+          stroke-width: 3;
           stroke-linecap: round;
-          opacity: 0.18;
+          opacity: 0.28;
         }
 
         .nucleo-energy-glow,
@@ -89,7 +88,7 @@ export const NucleoIcon = ({ className = '' }) => {
           fill: none;
           stroke: currentColor;
           stroke-linecap: round;
-          stroke-dasharray: 15 177;
+          stroke-dasharray: 24 168;
           animation-name: nucleo-energy-flow;
           animation-timing-function: linear;
           animation-iteration-count: infinite;
@@ -97,14 +96,14 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-energy-glow {
           stroke-width: 7;
-          opacity: 0.13;
+          opacity: 0.09;
           filter: url(#${glowId});
         }
 
         .nucleo-energy {
           stroke-width: 2.6;
-          opacity: 0.86;
-          filter: drop-shadow(0 0 5px currentColor);
+          opacity: 1;
+          filter: drop-shadow(0 0 8px currentColor);
         }
 
         .energy-1 .nucleo-energy,
@@ -118,13 +117,8 @@ export const NucleoIcon = ({ className = '' }) => {
           animation-delay: -1.1s;
         }
 
-        .energy-2 .nucleo-energy {
-          opacity: 0.68;
-          stroke-width: 2.35;
-        }
-
         .energy-2 .nucleo-energy-glow {
-          opacity: 0.1;
+          opacity: 0.07;
         }
 
         .energy-3 .nucleo-energy,
@@ -134,13 +128,8 @@ export const NucleoIcon = ({ className = '' }) => {
           animation-direction: reverse;
         }
 
-        .energy-3 .nucleo-energy {
-          opacity: 0.52;
-          stroke-width: 2.1;
-        }
-
         .energy-3 .nucleo-energy-glow {
-          opacity: 0.08;
+          opacity: 0.06;
         }
 
         .nucleo-burst-ring {
@@ -160,13 +149,7 @@ export const NucleoIcon = ({ className = '' }) => {
 
         .nucleo-wrapper.is-bursting .nucleo-energy,
         .nucleo-wrapper.is-bursting .nucleo-energy-glow {
-          stroke-dasharray: 24 168;
           animation-duration: 1.15s;
-        }
-
-        .nucleo-wrapper.is-bursting .nucleo-energy {
-          opacity: 1;
-          filter: drop-shadow(0 0 8px currentColor);
         }
 
         @keyframes nucleo-core-pulse {
@@ -187,15 +170,6 @@ export const NucleoIcon = ({ className = '' }) => {
           }
           100% {
             opacity: 0.84;
-          }
-        }
-
-        @keyframes nucleo-halo-breathe {
-          0%, 100% {
-            opacity: 0.05;
-          }
-          50% {
-            opacity: 0.12;
           }
         }
 
@@ -242,7 +216,7 @@ export const NucleoIcon = ({ className = '' }) => {
 
           .nucleo-energy,
           .nucleo-energy-glow {
-            stroke-dasharray: 10 182;
+            stroke-dasharray: 24 168;
             opacity: 0.45;
           }
         }
