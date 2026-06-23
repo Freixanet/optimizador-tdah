@@ -1708,7 +1708,7 @@ export default function App() {
 
         <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
           <div className="max-w-3xl mx-auto">
-            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
+            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-surface shadow-sm dark:shadow-none">
               {uploadedFile && (
                 <div className="flex items-center gap-2 px-3 pt-3">
                   {uploadedFile.isImage && uploadedFile.previewUrl ? (
