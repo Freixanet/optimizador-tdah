@@ -95,6 +95,106 @@
     -webkit-touch-callout: none;
   }
 
+  .nucleus-living {
+    --nucleus-orbit-duration: 18s;
+    transform: translateZ(0);
+  }
+
+  .nucleus-living__ambient {
+    position: absolute;
+    inset: -38%;
+    border-radius: 9999px;
+    pointer-events: none;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, currentColor 16%, transparent) 0%,
+      transparent 72%
+    );
+    opacity: 0.55;
+  }
+
+  .nucleus-living__orbit {
+    transform-box: fill-box;
+    transform-origin: 12px 12px;
+    animation: nucleus-orbit-spin var(--nucleus-orbit-duration) linear infinite;
+    will-change: transform;
+  }
+
+  .nucleus-living__ring {
+    opacity: 0.88;
+  }
+
+  .nucleus-living__electron {
+    will-change: transform;
+  }
+
+  .nucleus-living__electron--counter {
+    animation: nucleus-electron-counter var(--nucleus-orbit-duration) linear infinite;
+    transform-origin: 12px 12px;
+  }
+
+  .nucleus-living__core-wrap {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: nucleus-core-breathe 3.4s ease-in-out infinite;
+  }
+
+  .nucleus-living__core {
+    opacity: 0.96;
+  }
+
+  .nucleus-living__burst-ring {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    pointer-events: none;
+  }
+
+  .nucleus-living--interactive {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .nucleus-living--burst {
+    transform: scale(1.06);
+  }
+
+  .nucleus-living--burst .nucleus-living__orbit {
+    animation-duration: calc(var(--nucleus-orbit-duration) * 0.32);
+  }
+
+  .nucleus-living--burst .nucleus-living__electron--counter {
+    animation-duration: calc(var(--nucleus-orbit-duration) * 0.32);
+  }
+
+  .nucleus-living--burst .nucleus-living__core-wrap {
+    animation-duration: 0.55s;
+  }
+
+  .nucleus-living--burst .nucleus-living__ambient {
+    animation: nucleus-burst-glow 700ms ease-out forwards;
+  }
+
+  .nucleus-living--burst .nucleus-living__burst-ring {
+    animation: nucleus-burst-ring 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .nucleus-living--reduced .nucleus-living__ambient {
+    opacity: 0.42;
+    animation: none;
+  }
+
+  .nucleus-living--reduced .nucleus-living__orbit,
+  .nucleus-living--reduced .nucleus-living__core-wrap,
+  .nucleus-living--reduced .nucleus-living__electron--counter {
+    animation: none;
+  }
+
+  .nucleus-living:not(.nucleus-living--reduced) .nucleus-living__ambient {
+    animation: nucleus-ambient-pulse 3.4s ease-in-out infinite;
+  }
+
   .animate-atom-rotate {
     animation: atom-rotate 16s linear infinite;
     transform-origin: center;
@@ -103,6 +203,89 @@
   .animate-atom-rotate-fast {
     animation: atom-rotate 5s linear infinite;
     transform-origin: center;
+  }
+}
+
+@keyframes nucleus-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes nucleus-electron-counter {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes nucleus-core-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.94;
+  }
+  50% {
+    transform: scale(1.07);
+    opacity: 1;
+  }
+}
+
+@keyframes nucleus-ambient-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes nucleus-burst-glow {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  35% {
+    opacity: 0.95;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+
+@keyframes nucleus-burst-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+    stroke-width: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.85);
+    stroke-width: 0.1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nucleus-living__orbit,
+  .nucleus-living__core-wrap,
+  .nucleus-living__electron--counter,
+  .nucleus-living__ambient {
+    animation: none !important;
+  }
+
+  .nucleus-living--burst {
+    transform: none;
   }
 }
 
