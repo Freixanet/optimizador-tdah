@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Menu } from 'lucide-react';
+import MenuTwoLines from './MenuTwoLines';
 import {
   motion,
   useMotionValue,
@@ -103,7 +103,7 @@ function ReadingProgressBar({
             title="Abrir navegación"
             aria-label="Abrir navegación"
           >
-            <Menu className="w-5 h-5" />
+            <MenuTwoLines className="w-5 h-5" />
           </button>
           <span className="truncate text-xs sm:text-sm font-bold text-neutral-700 dark:text-neutral-200">
             {progressLabel}

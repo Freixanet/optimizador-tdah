@@ -16,7 +16,6 @@ import {
   Clock,
   Layers,
   List,
-  Menu,
   History,
   Settings,
   LogOut,
@@ -29,6 +28,7 @@ import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import LoadingState from './components/LoadingState';
+import MenuTwoLines from './components/MenuTwoLines';
 import ReadingProgressBar from './components/ReadingProgressBar';
 import {
   getInitialModelPreference,
@@ -1674,7 +1674,7 @@ export default function App() {
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >
-          <Menu className="w-5 h-5" />
+          <MenuTwoLines className="w-5 h-5" />
         </button>
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
           <div
