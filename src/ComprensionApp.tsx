@@ -2599,9 +2599,6 @@ export default function ComprensionApp() {
                 </button>
               </div>
             </div>
-            <p className="px-1 py-3 text-center text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
-              Texto, enlaces, PDF, vídeo e imágenes. Recibirás una idea central, un resumen útil y una lectura según tu objetivo.
-            </p>
           </div>
         </div>
       </div>
