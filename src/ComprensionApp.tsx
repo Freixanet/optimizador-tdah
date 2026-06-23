@@ -498,11 +498,10 @@ export default function ComprensionApp() {
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const scrollSpyLockRef = useRef(false);
-  const touchStartRef = useRef<{ x: number; y: number; fromEdge: boolean } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const historyStoreRef = useRef(historyStore);
 
   const SWIPE_THRESHOLD = 60;
-  const SWIPE_EDGE_ZONE = 28;
 
   const totalSteps = data?.steps?.length ?? 0;
   const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps ?? []), [data]);
@@ -644,7 +643,6 @@ export default function ComprensionApp() {
       touchStartRef.current = {
         x: touch.clientX,
         y: touch.clientY,
-        fromEdge: touch.clientX <= SWIPE_EDGE_ZONE,
       };
     },
     [isDesktop]
@@ -664,7 +662,7 @@ export default function ComprensionApp() {
       if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
       if (Math.abs(deltaY) > Math.abs(deltaX) * 0.85) return;
 
-      if (deltaX > 0 && start.fromEdge && !isMapOpen) {
+      if (deltaX > 0 && !isMapOpen) {
         setIsMapOpen(true);
       } else if (deltaX < 0 && isMapOpen) {
         setIsMapOpen(false);
