@@ -599,6 +599,10 @@ export default function ClassicApp() {
 
   const adjustComposerHeight = (el: HTMLTextAreaElement | null) => {
     if (!el) return;
+    if (!el.value.trim()) {
+      el.style.height = '';
+      return;
+    }
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   };
@@ -1754,7 +1758,7 @@ export default function ClassicApp() {
           )}
         </div>
 
-        <div className="shrink-0 px-4 sm:px-8 bg-app-canvas">
+        <div className="shrink-0 px-4 sm:px-8 pb-[max(1rem,env(safe-area-inset-bottom))] bg-app-canvas">
           <div className="max-w-3xl mx-auto">
             <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-surface shadow-sm dark:shadow-none">
               {uploadedFile && (
@@ -1802,7 +1806,7 @@ export default function ClassicApp() {
                   }}
                   rows={1}
                   placeholder={composerPlaceholder}
-                  className="w-full min-h-[52px] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-relaxed"
+                  className="w-full min-h-[4.75rem] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-snug"
                 />
               )}
 
