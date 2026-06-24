@@ -1185,14 +1185,27 @@ export default function ClassicApp() {
     scrollRoot.scrollTop = 0;
     scrollRoot.style.scrollBehavior = previousScrollBehavior;
 
-    const BOTTOM_THRESHOLD = 4;
+    const SHOW_THRESHOLD = 8;
+    const HIDE_THRESHOLD = 120;
     let rafId: number | null = null;
+    let footerVisible = false;
 
     const evaluate = () => {
       if (!scrollRoot) return;
       const { scrollTop, scrollHeight, clientHeight } = scrollRoot;
-      const atBottom = scrollTop + clientHeight >= scrollHeight - BOTTOM_THRESHOLD;
-      setShowStepFooter(atBottom);
+      const distanceFromBottom = scrollHeight - clientHeight - scrollTop;
+
+      let nextVisible = footerVisible;
+      if (!footerVisible && distanceFromBottom <= SHOW_THRESHOLD) {
+        nextVisible = true;
+      } else if (footerVisible && distanceFromBottom > HIDE_THRESHOLD) {
+        nextVisible = false;
+      }
+
+      if (nextVisible !== footerVisible) {
+        footerVisible = nextVisible;
+        setShowStepFooter(nextVisible);
+      }
     };
 
     let initRafId = requestAnimationFrame(() => {

@@ -1543,14 +1543,27 @@ export default function ComprensionApp() {
     scrollRoot.scrollTop = 0;
     scrollRoot.style.scrollBehavior = previousScrollBehavior;
 
-    const BOTTOM_THRESHOLD = 4;
+    const SHOW_THRESHOLD = 8;
+    const HIDE_THRESHOLD = 120;
     let rafId: number | null = null;
+    let footerVisible = false;
 
     const evaluate = () => {
       if (!scrollRoot) return;
       const { scrollTop, scrollHeight, clientHeight } = scrollRoot;
-      const atBottom = scrollTop + clientHeight >= scrollHeight - BOTTOM_THRESHOLD;
-      setShowStepFooter(atBottom);
+      const distanceFromBottom = scrollHeight - clientHeight - scrollTop;
+
+      let nextVisible = footerVisible;
+      if (!footerVisible && distanceFromBottom <= SHOW_THRESHOLD) {
+        nextVisible = true;
+      } else if (footerVisible && distanceFromBottom > HIDE_THRESHOLD) {
+        nextVisible = false;
+      }
+
+      if (nextVisible !== footerVisible) {
+        footerVisible = nextVisible;
+        setShowStepFooter(nextVisible);
+      }
     };
 
     let initRafId = requestAnimationFrame(() => {
@@ -2486,10 +2499,10 @@ export default function ComprensionApp() {
 
   const renderCompletion = () => (
     <div className="animate-fade-in content-column py-14">
-      <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 dark:border-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 dark:text-neutral-300">
+      <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-400">
         <CheckCircle2 className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
         Mapa completado
-      </div>
+      </p>
       <h2 className="mt-6 text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED]">
         {data?.completionCard?.title || 'Has terminado esta lectura'}
       </h2>
