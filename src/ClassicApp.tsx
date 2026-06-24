@@ -1,4 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight,
@@ -147,7 +149,6 @@ async function processImageFile(
   }
 }
 const PAGE_BOTTOM_PAD_PX = 24;
-const CONTENT_FOOTER_GAP_PX = 48;
 
 function isSingleUrl(text: string): boolean {
   return /^https?:\/\/\S+$/.test(text.trim());
@@ -266,6 +267,7 @@ export default function ClassicApp() {
   const reduceMotion = useReducedMotion();
 
   const contentRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const stepFooterRef = useRef<HTMLDivElement>(null);
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -276,10 +278,46 @@ export default function ClassicApp() {
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const scrollSpyLockRef = useRef(false);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const sidebarTouchStartRef = useRef<{ x: number; y: number; dragging: boolean; opening: boolean } | null>(null);
+  const sidebarDragXRef = useRef<number | null>(null);
+  const suppressMainClickRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
 
   const SWIPE_THRESHOLD = 60;
+
+  const getMobileSidebarWidthPx = useCallback(
+    () => Math.min(window.innerWidth * 0.82, 360),
+    []
+  );
+
+  const lockMainScroll = useCallback(() => {
+    const main = mainRef.current;
+    if (main) {
+      main.style.overflow = 'hidden';
+      main.style.touchAction = 'none';
+    }
+    const el = contentRef.current;
+    if (!el) return;
+    el.style.overflow = 'hidden';
+    el.style.touchAction = 'none';
+  }, []);
+
+  const unlockMainScroll = useCallback(() => {
+    const main = mainRef.current;
+    if (main) {
+      main.style.overflow = '';
+      main.style.touchAction = '';
+    }
+    const el = contentRef.current;
+    if (!el) return;
+    el.style.overflow = '';
+    el.style.touchAction = '';
+  }, []);
+
+  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
+  const [sidebarDragX, setSidebarDragX] = useState<number | null>(null);
+  const [isSidebarSettling, setIsSidebarSettling] = useState(false);
+  const sheetTransitionCompleteRef = useRef<(() => void) | null>(null);
 
   const totalSteps = data?.steps?.length ?? 0;
   const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps ?? []), [data]);
@@ -407,44 +445,295 @@ export default function ClassicApp() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const toggleSidebar = useCallback(() => {
-    setIsMapOpen((open) => !open);
-  }, []);
+  const triggerMobileSidebarHaptic = useCallback(() => {
+    if (isDesktop) return;
 
-  const handleSwipeTouchStart = useCallback(
+    void (async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          await Haptics.impact({ style: ImpactStyle.Light });
+        }
+      } catch {
+        // Haptics unavailable; fail silently.
+      }
+    })().catch(() => {});
+  }, [isDesktop]);
+
+  const animateMainSheetTo = useCallback(
+    (targetX: number, onComplete?: () => void) => {
+      if (isDesktop) {
+        onComplete?.();
+        return;
+      }
+
+      const width = getMobileSidebarWidthPx();
+      const currentX = sidebarDragXRef.current ?? (isMapOpen ? width : 0);
+
+      if (Math.abs(currentX - targetX) < 1) {
+        setIsSidebarDragging(false);
+        setIsSidebarSettling(false);
+        setSidebarDragX(null);
+        sidebarDragXRef.current = null;
+        onComplete?.();
+        return;
+      }
+
+      setIsSidebarDragging(false);
+      setIsSidebarSettling(true);
+      sheetTransitionCompleteRef.current = onComplete ?? null;
+      setSidebarDragX(currentX);
+      sidebarDragXRef.current = currentX;
+
+      requestAnimationFrame(() => {
+        setSidebarDragX(targetX);
+        sidebarDragXRef.current = targetX;
+      });
+    },
+    [getMobileSidebarWidthPx, isDesktop, isMapOpen]
+  );
+
+  const closeMobileSidebar = useCallback(() => {
+    if (isDesktop) {
+      setIsSidebarDragging(false);
+      setIsSidebarSettling(false);
+      setIsMapOpen(false);
+      setSidebarDragX(null);
+      sidebarDragXRef.current = null;
+      return;
+    }
+
+    if (isSidebarSettling || !isMapOpen) return;
+
+    triggerMobileSidebarHaptic();
+    animateMainSheetTo(0, () => {
+      setIsMapOpen(false);
+    });
+  }, [
+    animateMainSheetTo,
+    isDesktop,
+    isMapOpen,
+    isSidebarSettling,
+    triggerMobileSidebarHaptic,
+  ]);
+
+  const toggleSidebar = useCallback(() => {
+    if (isDesktop) {
+      setIsMapOpen((open) => !open);
+      return;
+    }
+    if (isSidebarSettling) return;
+    if (isMapOpen) {
+      closeMobileSidebar();
+    } else {
+      const width = getMobileSidebarWidthPx();
+      setSidebarDragX(0);
+      sidebarDragXRef.current = 0;
+      animateMainSheetTo(width, () => {
+        setIsMapOpen(true);
+      });
+    }
+  }, [
+    animateMainSheetTo,
+    closeMobileSidebar,
+    getMobileSidebarWidthPx,
+    isDesktop,
+    isMapOpen,
+    isSidebarSettling,
+  ]);
+
+  const handleMainClickCapture = useCallback(
+    (event: React.MouseEvent) => {
+      if (suppressMainClickRef.current) {
+        suppressMainClickRef.current = false;
+        return;
+      }
+      if (!isMapOpen || isDesktop || isSidebarDragging || isSidebarSettling) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMobileSidebar();
+    },
+    [closeMobileSidebar, isDesktop, isMapOpen, isSidebarDragging, isSidebarSettling]
+  );
+
+  const handleMainTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (isDesktop) return;
       const touch = e.touches[0];
-      touchStartRef.current = {
+      sidebarTouchStartRef.current = {
         x: touch.clientX,
         y: touch.clientY,
+        dragging: false,
+        opening: !isMapOpen,
       };
-    },
-    [isDesktop]
-  );
-
-  const handleSwipeTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (isDesktop || !touchStartRef.current) return;
-
-      const start = touchStartRef.current;
-      touchStartRef.current = null;
-
-      const touch = e.changedTouches[0];
-      const deltaX = touch.clientX - start.x;
-      const deltaY = touch.clientY - start.y;
-
-      if (Math.abs(deltaX) < SWIPE_THRESHOLD) return;
-      if (Math.abs(deltaY) > Math.abs(deltaX) * 0.85) return;
-
-      if (deltaX > 0 && !isMapOpen) {
-        setIsMapOpen(true);
-      } else if (deltaX < 0 && isMapOpen) {
-        setIsMapOpen(false);
+      sidebarDragXRef.current = null;
+      if (isMapOpen) {
+        e.stopPropagation();
       }
     },
     [isDesktop, isMapOpen]
   );
+
+  const handleMainTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (isDesktop || !sidebarTouchStartRef.current) return;
+
+      const touch = e.touches[0];
+      const start = sidebarTouchStartRef.current;
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+
+      if (!start.dragging) {
+        if (Math.abs(deltaX) < 4 && Math.abs(deltaY) < 4) return;
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 0.75 && Math.abs(deltaY) > 8) {
+          sidebarTouchStartRef.current = null;
+          return;
+        }
+        if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
+        if (start.opening) {
+          if (deltaX <= 0) return;
+        } else if (deltaX >= 0) {
+          return;
+        }
+        start.dragging = true;
+        setIsSidebarDragging(true);
+        lockMainScroll();
+      }
+
+      e.stopPropagation();
+      e.preventDefault();
+
+      const width = getMobileSidebarWidthPx();
+      const dragX = start.opening
+        ? Math.max(0, Math.min(width, deltaX))
+        : Math.max(0, Math.min(width, width + deltaX));
+      sidebarDragXRef.current = dragX;
+      setSidebarDragX(dragX);
+    },
+    [getMobileSidebarWidthPx, isDesktop, lockMainScroll]
+  );
+
+  const handleMainTouchEnd = useCallback(() => {
+    if (isDesktop) return;
+    const start = sidebarTouchStartRef.current;
+    unlockMainScroll();
+    if (!start) return;
+
+    if (start.dragging) {
+      const width = getMobileSidebarWidthPx();
+      const dragX = sidebarDragXRef.current ?? (start.opening ? 0 : width);
+
+      setIsSidebarDragging(false);
+      sidebarTouchStartRef.current = null;
+      suppressMainClickRef.current = true;
+
+      if (start.opening) {
+        if (dragX >= SWIPE_THRESHOLD) {
+          animateMainSheetTo(width, () => {
+            setIsMapOpen(true);
+          });
+        } else {
+          animateMainSheetTo(0, () => {});
+        }
+      } else if (width - dragX >= SWIPE_THRESHOLD) {
+        triggerMobileSidebarHaptic();
+        animateMainSheetTo(0, () => {
+          setIsMapOpen(false);
+        });
+      } else {
+        animateMainSheetTo(width, () => {});
+      }
+      return;
+    }
+
+    sidebarTouchStartRef.current = null;
+  }, [
+    animateMainSheetTo,
+    getMobileSidebarWidthPx,
+    isDesktop,
+    triggerMobileSidebarHaptic,
+    unlockMainScroll,
+  ]);
+
+  const isSidebarUnderlayVisible =
+    !isDesktop &&
+    (isMapOpen ||
+      isSidebarDragging ||
+      isSidebarSettling ||
+      (sidebarDragX !== null && sidebarDragX > 0));
+
+  const showSidebarExpanded = isDesktop ? isMapOpen : isSidebarUnderlayVisible;
+
+  const mainSheetStyle = useMemo((): React.CSSProperties | undefined => {
+    if (isDesktop) return undefined;
+
+    const style: React.CSSProperties = { willChange: 'transform' };
+
+    if (sidebarDragX !== null) {
+      style.transform = `translate3d(${sidebarDragX}px, 0, 0)`;
+    } else if (isMapOpen) {
+      style.transform = 'translate3d(var(--mobile-sidebar-width), 0, 0)';
+    } else {
+      style.transform = 'translate3d(0, 0, 0)';
+    }
+
+    if (isSidebarUnderlayVisible) {
+      style.borderRadius = '48px';
+      style.boxShadow =
+        theme === 'dark'
+          ? '0 16px 48px rgba(0,0,0,0.55)'
+          : '0 16px 48px rgba(0,0,0,0.2)';
+    }
+
+    if (isSidebarDragging) {
+      style.touchAction = 'none';
+      style.transition = 'none';
+    } else if (isSidebarSettling) {
+      style.transition = 'transform 300ms ease-out';
+    }
+
+    return style;
+  }, [
+    isDesktop,
+    isMapOpen,
+    isSidebarDragging,
+    isSidebarSettling,
+    isSidebarUnderlayVisible,
+    sidebarDragX,
+    theme,
+  ]);
+
+  React.useEffect(() => {
+    const node = mainRef.current;
+    if (!node || isDesktop) return;
+
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.propertyName !== 'transform' || !isSidebarSettling) return;
+
+      const onComplete = sheetTransitionCompleteRef.current;
+      sheetTransitionCompleteRef.current = null;
+      setIsSidebarSettling(false);
+      setSidebarDragX(null);
+      sidebarDragXRef.current = null;
+      onComplete?.();
+    };
+
+    node.addEventListener('transitionend', handleTransitionEnd);
+    return () => node.removeEventListener('transitionend', handleTransitionEnd);
+  }, [isDesktop, isSidebarSettling]);
+
+  React.useEffect(() => {
+    const node = mainRef.current;
+    if (!node || isDesktop) return;
+
+    const preventScrollWhileDragging = (event: TouchEvent) => {
+      if (sidebarTouchStartRef.current?.dragging || isSidebarDragging) {
+        event.preventDefault();
+      }
+    };
+
+    node.addEventListener('touchmove', preventScrollWhileDragging, { passive: false });
+    return () => node.removeEventListener('touchmove', preventScrollWhileDragging);
+  }, [isDesktop, isSidebarDragging]);
 
   React.useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1294,7 +1583,7 @@ export default function ClassicApp() {
   );
 
   const renderSidebarBrand = () => (
-    <div className="flex items-center justify-between gap-2 mb-6">
+    <div className="flex items-center justify-between gap-2 mb-10">
       <button
         type="button"
         onClick={handleNewMap}
@@ -1310,7 +1599,7 @@ export default function ClassicApp() {
       <button
         type="button"
         onClick={toggleSidebar}
-        className="inline-flex p-2 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+        className="hidden lg:inline-flex p-2 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
         title="Cerrar panel lateral"
         aria-label="Cerrar panel lateral"
       >
@@ -1321,20 +1610,20 @@ export default function ClassicApp() {
 
   const renderSidebar = () => (
     <aside
-      className={`fixed left-0 inset-y-0 z-50 shrink-0 transform transition-all duration-300 ease-in-out bg-neutral-50 dark:bg-app-canvas border-r border-neutral-200 dark:border-white/5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 ${
-        isMapOpen
-          ? 'translate-x-0 w-full lg:w-72 flex flex-col overflow-hidden'
-          : '-translate-x-full pointer-events-none lg:pointer-events-auto lg:translate-x-0 w-full lg:w-14 lg:overflow-visible'
+      className={`fixed left-0 inset-y-0 z-10 shrink-0 bg-neutral-50 dark:bg-app-canvas border-r-0 lg:border-r lg:border-neutral-200 lg:dark:border-white/5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] w-[var(--mobile-sidebar-width)] select-none [webkit-user-select:none] [webkit-touch-callout:none] lg:pt-0 lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 lg:w-auto ${
+        showSidebarExpanded
+          ? `flex flex-col overflow-hidden lg:w-72${!isDesktop && !isMapOpen ? ' pointer-events-none' : ''}`
+          : 'pointer-events-none lg:pointer-events-auto lg:overflow-visible lg:w-14'
       }`}
-      aria-hidden={!isMapOpen && !isDesktop}
+      aria-hidden={!showSidebarExpanded && !isDesktop}
     >
-      {isMapOpen ? (
+      {showSidebarExpanded ? (
       <div className="flex flex-col h-full min-h-0 w-full lg:w-72">
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-6 lg:pt-8">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-6 lg:pt-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]">
           {renderSidebarBrand()}
 
           {appState === 'result' && data && (
-            <div className="mb-6">
+            <div className="mb-2">
               <button
                 type="button"
                 onClick={() => setIsIndexExpanded((prev) => !prev)}
@@ -1404,6 +1693,7 @@ export default function ClassicApp() {
             entries={historyStore.entries}
             activeId={historyStore.activeId}
             disabled={appState === 'loading'}
+            showTopDivider={appState === 'result' && Boolean(data)}
             onSelect={handleSelectHistory}
             onDelete={handleDeleteHistory}
             onTogglePin={handleTogglePinHistory}
@@ -1698,14 +1988,14 @@ export default function ClassicApp() {
     </div>
   );
 
-  const renderProgressBar = (sticky = false) => (
+  const renderProgressBar = () => (
     <ReadingProgressBar
       active={appState === 'result'}
       viewAll={viewAll}
       isComplete={isComplete}
       stepProgress={progress}
       progressLabel={progressLabel}
-      sticky={sticky}
+      scrollContainer={contentRef}
       onToggleSidebar={toggleSidebar}
     />
   );
@@ -1938,46 +2228,79 @@ export default function ClassicApp() {
   };
 
   const renderLoadingContent = () => (
-    <>
-      <LoadingState />
-      <div className="max-w-3xl mx-auto px-6 pb-8 w-full flex justify-center">
-        <button
-          onClick={handleCancel}
-          className="px-6 py-3 rounded-xl font-bold text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
-        >
-          Cancelar
-        </button>
+    <div className="flex flex-col flex-1 min-h-0 w-full">
+      <div className={mainScrollAreaClass}>
+        <LoadingState />
       </div>
-    </>
+      <div className="shrink-0 border-t border-neutral-200 dark:border-white/5 bg-app-canvas px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="max-w-3xl mx-auto flex justify-center">
+          <button
+            onClick={handleCancel}
+            className="px-6 py-3 rounded-xl font-bold text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-white/10 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   );
+
+  const isMobileDrawerScene = isSidebarUnderlayVisible;
+  const isMainScrollLocked = !isDesktop && isSidebarDragging;
+  const mainScrollAreaClass = isMainScrollLocked
+    ? 'flex-1 min-h-0 overflow-hidden overscroll-none touch-none'
+    : 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y';
 
   return (
     <div
-      className="h-dvh max-h-[100dvh] overflow-hidden bg-app-canvas flex flex-col lg:flex-row transition-colors duration-300 pt-[env(safe-area-inset-top)]"
-      onTouchStart={handleSwipeTouchStart}
-      onTouchEnd={handleSwipeTouchEnd}
+      className={`relative h-dvh max-h-[100dvh] overflow-hidden flex flex-col lg:flex-row transition-colors duration-300 lg:pt-[env(safe-area-inset-top)] ${
+        isMobileDrawerScene ? 'bg-neutral-50 dark:bg-app-canvas' : 'bg-app-canvas'
+      }`}
+      style={{ '--mobile-sidebar-width': 'min(82vw, 360px)' } as React.CSSProperties}
     >
+      {isMobileDrawerScene && (
+        <div
+          className="fixed inset-0 z-[5] pointer-events-none lg:hidden bg-neutral-50 dark:bg-app-canvas"
+          aria-hidden="true"
+        />
+      )}
       {renderSidebar()}
 
       <main
-        className={`flex-1 min-w-0 min-h-0 w-full flex flex-col bg-app-canvas ${
-          appState === 'result' && (viewAll || isComplete)
-            ? 'overflow-y-auto overscroll-y-contain touch-pan-y'
-            : 'overflow-hidden'
-        }`}
+        ref={mainRef}
+        className={`fixed inset-0 z-20 h-dvh max-h-[100dvh] w-full flex flex-col overflow-hidden bg-app-canvas will-change-transform lg:relative lg:inset-auto lg:flex-1 lg:min-h-0 lg:min-w-0 lg:h-auto lg:max-h-none ${
+          isMainScrollLocked ? 'touch-none overscroll-none' : ''
+        } lg:touch-auto`}
+        style={mainSheetStyle}
+        onClickCapture={handleMainClickCapture}
+        onTouchStart={handleMainTouchStart}
+        onTouchMove={handleMainTouchMove}
+        onTouchEnd={(e) => {
+          if (!isDesktop && (isMapOpen || sidebarTouchStartRef.current)) {
+            e.stopPropagation();
+          }
+          handleMainTouchEnd();
+        }}
+        onTouchCancel={(e) => {
+          if (!isDesktop && (isMapOpen || sidebarTouchStartRef.current)) {
+            e.stopPropagation();
+          }
+          handleMainTouchEnd();
+        }}
       >
+        <div className="flex flex-col flex-1 min-h-0 h-full pt-[env(safe-area-inset-top)] lg:pt-0">
         {appState === 'input' && renderInputContent()}
 
         {appState === 'loading' && renderLoadingContent()}
 
         {appState === 'result' && !viewAll && !isComplete && (
           <div className="flex flex-col flex-1 min-h-0 w-full">
-            {(!isMapOpen || isDesktop) && renderProgressBar()}
+            {renderProgressBar()}
 
             <div className="flex flex-col flex-1 min-h-0">
               <div
                 ref={contentRef}
-                className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+                className={mainScrollAreaClass}
               >
                 <div
                   className="max-w-3xl mx-auto px-6 py-8 w-full"
@@ -2013,29 +2336,32 @@ export default function ClassicApp() {
         )}
 
         {appState === 'result' && (viewAll || isComplete) && (
-          <>
-            {(!isMapOpen || isDesktop) && renderProgressBar(true)}
+          <div className="flex flex-col flex-1 min-h-0 w-full">
+            {renderProgressBar()}
 
-            <div
-              className={`max-w-3xl mx-auto px-6 py-8 w-full ${
-                viewAll
-                  ? 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
-                  : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
-              }`}
-            >
-              {renderMapTitle(!isComplete)}
+            <div ref={contentRef} className={mainScrollAreaClass}>
+              <div
+                className={`max-w-3xl mx-auto px-6 py-8 w-full ${
+                  viewAll
+                    ? 'pb-[calc(2rem+env(safe-area-inset-bottom))]'
+                    : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
+                }`}
+              >
+                {renderMapTitle(!isComplete)}
 
-              {isComplete ? (
-                renderCompletion()
-              ) : (
-                <div className="animate-fade-in">
-                  {renderResumen()}
-                  {data?.steps?.map((_: any, idx: number) => renderStep(idx + 1))}
-                </div>
-              )}
+                {isComplete ? (
+                  renderCompletion()
+                ) : (
+                  <div className="animate-fade-in">
+                    {renderResumen()}
+                    {data?.steps?.map((_: any, idx: number) => renderStep(idx + 1))}
+                  </div>
+                )}
+              </div>
             </div>
-          </>
+          </div>
         )}
+        </div>
       </main>
     </div>
   );

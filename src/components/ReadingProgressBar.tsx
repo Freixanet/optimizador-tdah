@@ -14,7 +14,7 @@ type ReadingProgressBarProps = {
   isComplete: boolean;
   stepProgress: number;
   progressLabel: string;
-  sticky?: boolean;
+  scrollContainer?: React.RefObject<HTMLElement | null>;
   onToggleSidebar: () => void;
 };
 
@@ -24,7 +24,7 @@ function ReadingProgressBar({
   isComplete,
   stepProgress,
   progressLabel,
-  sticky = false,
+  scrollContainer,
   onToggleSidebar,
 }: ReadingProgressBarProps) {
   const reduceMotion = useReducedMotion();
@@ -60,8 +60,11 @@ function ReadingProgressBar({
     }
 
     const updateProgress = () => {
-      const scrollTop = window.scrollY;
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const element = scrollContainer?.current;
+      const scrollTop = element ? element.scrollTop : window.scrollY;
+      const maxScroll = element
+        ? element.scrollHeight - element.clientHeight
+        : document.documentElement.scrollHeight - window.innerHeight;
       const scrollRatio = maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, scrollTop / maxScroll));
       viewAllProgress.set(scrollRatio);
     };
@@ -76,21 +79,23 @@ function ReadingProgressBar({
     };
 
     updateProgress();
-    window.addEventListener('scroll', onScroll, { passive: true });
+    const element = scrollContainer?.current;
+    const scrollTarget: EventTarget = element ?? window;
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', updateProgress);
 
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      scrollTarget.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', updateProgress);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [active, isComplete, viewAll, viewAllProgress]);
+  }, [active, isComplete, scrollContainer, viewAll, viewAllProgress]);
 
   const shownPercent = viewAll ? displayPercent : Math.round(stepProgress);
 
   return (
     <div
-      className={`shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5${sticky ? ' sticky top-0 z-40' : ''}`}
+      className="shrink-0 bg-neutral-50 dark:bg-app-canvas border-b border-neutral-200 dark:border-white/5"
       role="region"
       aria-label="Progreso de lectura"
     >

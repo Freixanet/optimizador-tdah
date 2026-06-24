@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ChevronDown,
   FileText,
   Link2,
   Youtube,
@@ -22,6 +23,7 @@ type HistoryPanelProps = {
   entries: HistoryEntry[];
   activeId: string | null;
   disabled?: boolean;
+  showTopDivider?: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onTogglePin: (id: string) => void;
@@ -43,8 +45,34 @@ const SOURCE_ICONS: Record<SourceType, typeof FileText> = {
   pdf: File,
 };
 
-const LONG_PRESS_MS = 500;
+const LONG_PRESS_MS = 380;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
+
+function clearDocumentSelection(): void {
+  if (typeof window === 'undefined') return;
+  window.getSelection()?.removeAllRanges();
+}
+
+function preventNativeSelection(event: SyntheticEvent): void {
+  event.preventDefault();
+}
+
+function triggerHistoryItemHaptic(): void {
+  void (async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        await Haptics.impact({ style: ImpactStyle.Light });
+        return;
+      }
+    } catch {
+      // Native haptics unavailable; fall back to web vibration when supported.
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(12);
+    }
+  })().catch(() => {});
+}
 
 function sortPinnedEntries(entries: HistoryEntry[]) {
   return [...entries].sort(
@@ -56,12 +84,12 @@ export default function HistoryPanel({
   entries,
   activeId,
   disabled = false,
+  showTopDivider = false,
   onSelect,
   onDelete,
   onTogglePin,
   onRename,
 }: HistoryPanelProps) {
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -73,6 +101,8 @@ export default function HistoryPanel({
   const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const pressTargetRef = useRef<HTMLButtonElement | null>(null);
   const pressEntryRef = useRef<HistoryEntry | null>(null);
+  const bodyUserSelectRef = useRef<{ userSelect: string; webkitUserSelect: string } | null>(null);
+  const releaseSelectionGuardRef = useRef<(() => void) | null>(null);
 
   const pinnedEntries = useMemo(
     () => sortPinnedEntries(entries.filter((entry) => entry.pinned)),
@@ -106,6 +136,62 @@ export default function HistoryPanel({
     renameInputRef.current?.select();
   }, [renamingEntryId]);
 
+  const lockBodySelection = () => {
+    if (typeof document === 'undefined' || bodyUserSelectRef.current) return;
+    bodyUserSelectRef.current = {
+      userSelect: document.body.style.userSelect,
+      webkitUserSelect: document.body.style.webkitUserSelect,
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+  };
+
+  const unlockBodySelection = () => {
+    if (typeof document === 'undefined' || !bodyUserSelectRef.current) return;
+    document.body.style.userSelect = bodyUserSelectRef.current.userSelect;
+    document.body.style.webkitUserSelect = bodyUserSelectRef.current.webkitUserSelect;
+    bodyUserSelectRef.current = null;
+  };
+
+  const disableSelectionGuard = () => {
+    releaseSelectionGuardRef.current?.();
+    releaseSelectionGuardRef.current = null;
+  };
+
+  const enableSelectionGuard = () => {
+    disableSelectionGuard();
+    clearDocumentSelection();
+
+    const prevent = (event: Event) => {
+      event.preventDefault();
+      clearDocumentSelection();
+    };
+    const onSelectionChange = () => clearDocumentSelection();
+
+    document.addEventListener('selectstart', prevent, true);
+    document.addEventListener('contextmenu', prevent, true);
+    document.addEventListener('selectionchange', onSelectionChange, true);
+
+    releaseSelectionGuardRef.current = () => {
+      document.removeEventListener('selectstart', prevent, true);
+      document.removeEventListener('contextmenu', prevent, true);
+      document.removeEventListener('selectionchange', onSelectionChange, true);
+    };
+  };
+
+  const endPressGesture = () => {
+    disableSelectionGuard();
+    unlockBodySelection();
+    clearDocumentSelection();
+  };
+
+  useEffect(() => {
+    return () => {
+      disableSelectionGuard();
+      unlockBodySelection();
+    };
+  }, []);
+
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current);
@@ -131,9 +217,6 @@ export default function HistoryPanel({
       left: Math.max(12, left),
       width: menuWidth,
     });
-    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-      navigator.vibrate(12);
-    }
   };
 
   const triggerLongPress = () => {
@@ -143,6 +226,9 @@ export default function HistoryPanel({
 
     longPressTriggeredRef.current = true;
     suppressClickRef.current = true;
+    enableSelectionGuard();
+    clearDocumentSelection();
+    triggerHistoryItemHaptic();
     openActionMenu(entry, target);
   };
 
@@ -151,6 +237,7 @@ export default function HistoryPanel({
 
     longPressTriggeredRef.current = false;
     scrollIntentRef.current = false;
+    lockBodySelection();
     pressStartRef.current = { x: e.clientX, y: e.clientY };
     pressTargetRef.current = e.currentTarget;
     pressEntryRef.current = entry;
@@ -160,6 +247,11 @@ export default function HistoryPanel({
   };
 
   const handleEntryPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    if (longPressTriggeredRef.current) {
+      clearDocumentSelection();
+      return;
+    }
+
     if (!pressStartRef.current || longPressTimerRef.current === null) return;
 
     const dx = e.clientX - pressStartRef.current.x;
@@ -172,6 +264,7 @@ export default function HistoryPanel({
 
   const handleEntryPointerUp = () => {
     clearLongPress();
+    endPressGesture();
 
     if (longPressTriggeredRef.current) {
       longPressTriggeredRef.current = false;
@@ -185,6 +278,7 @@ export default function HistoryPanel({
   const handleEntryPointerCancel = () => {
     clearLongPress();
     longPressTriggeredRef.current = false;
+    endPressGesture();
     resetPressState();
   };
 
@@ -251,8 +345,9 @@ export default function HistoryPanel({
             handleEntryClick(entry.id);
           }}
           onContextMenu={(e) => handleEntryContextMenu(entry, e)}
+          onSelectStart={preventNativeSelection}
           disabled={disabled}
-          className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none touch-pan-y [webkit-touch-callout:none] disabled:opacity-50 disabled:pointer-events-none ${
+          className={`w-full text-left px-3 py-2.5 pr-9 rounded-lg transition-all flex items-start gap-2.5 select-none [webkit-user-select:none] touch-pan-y [webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] disabled:opacity-50 disabled:pointer-events-none ${
             isActive
               ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
               : isPinned
@@ -281,13 +376,21 @@ export default function HistoryPanel({
                 onBlur={() => commitRename(entry)}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="w-full rounded-md border border-indigo-300 dark:border-indigo-500/40 bg-white dark:bg-neutral-900 px-2 py-1 text-sm font-semibold text-neutral-800 dark:text-neutral-100 outline-none"
+                className="w-full rounded-md border border-indigo-300 dark:border-indigo-500/40 bg-white dark:bg-neutral-900 px-2 py-1 text-sm font-semibold text-neutral-800 dark:text-neutral-100 outline-none select-text [webkit-user-select:text]"
                 aria-label="Nuevo nombre del mapa"
               />
             ) : (
-              <span className="block text-sm font-semibold truncate">{entry.title}</span>
+              <span
+                className="block text-sm font-semibold truncate select-none [webkit-user-select:none]"
+                style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
+              >
+                {entry.title}
+              </span>
             )}
-            <span className="block text-xs opacity-70 mt-0.5">
+            <span
+              className="block text-xs opacity-70 mt-0.5 select-none [webkit-user-select:none]"
+              style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
+            >
               {formatRelativeDate(entry.updatedAt)}
             </span>
           </span>
@@ -312,56 +415,49 @@ export default function HistoryPanel({
   };
 
   return (
-    <div className="mb-8">
-      <button
-        type="button"
-        onClick={() => setIsHistoryExpanded((prev) => !prev)}
-        className="w-full flex items-center gap-2 mb-4 text-left rounded-lg -mx-2 px-2 py-1 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
-        aria-expanded={isHistoryExpanded}
-      >
-        <ChevronDown
-          className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${isHistoryExpanded ? '' : '-rotate-90'}`}
-        />
+    <div
+      className={`mb-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]${
+        showTopDivider ? ' mt-5 pt-6 border-t border-neutral-200/80 dark:border-white/5' : ''
+      }`}
+      onSelectStart={preventNativeSelection}
+    >
+      <div className="mb-4 px-2 py-1">
         <span className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-400">
           Historial
         </span>
-      </button>
+      </div>
 
-      {isHistoryExpanded && (
-        <>
-          {entries.length === 0 ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-500 px-1 py-2">
-              Tus mapas generados aparecerán aquí.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {pinnedEntries.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-                    <Pin className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                    <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
-                      Fijados
-                    </span>
-                  </div>
-                  <ul className="flex flex-col gap-1">{pinnedEntries.map(renderEntryItem)}</ul>
-                </div>
-              )}
-
-              {recentEntries.length > 0 && (
-                <div>
-                  {pinnedEntries.length > 0 && (
-                    <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-1">
-                      <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
-                        Recientes
-                      </span>
-                    </div>
-                  )}
-                  <ul className="flex flex-col gap-1">{recentEntries.map(renderEntryItem)}</ul>
-                </div>
-              )}
+      {entries.length === 0 ? (
+        <p className="text-sm text-neutral-500 dark:text-neutral-500 px-1 py-2">
+          Tus mapas generados aparecerán aquí.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {pinnedEntries.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
+                <Pin className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Fijados
+                </span>
+              </div>
+              <ul className="flex flex-col gap-1 select-none [webkit-user-select:none]">{pinnedEntries.map(renderEntryItem)}</ul>
             </div>
           )}
-        </>
+
+          {recentEntries.length > 0 && (
+            <div>
+              {pinnedEntries.length > 0 && (
+                <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-1">
+                  <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
+                    Recientes
+                  </span>
+                </div>
+              )}
+              <ul className="flex flex-col gap-1 select-none [webkit-user-select:none]">{recentEntries.map(renderEntryItem)}</ul>
+            </div>
+          )}
+        </div>
       )}
 
       {actionMenu &&
