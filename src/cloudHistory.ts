@@ -3,7 +3,7 @@ import { isNativeShell } from './nativeShell';
 import { supabase } from './supabase';
 
 function authRedirectUrl() {
-  if (isNativeShell()) return 'com.nucleo.app://login-callback';
+  if (isNativeShell()) return 'com.freixanet.nucleo://login-callback';
   return window.location.origin;
 }
 

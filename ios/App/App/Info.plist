@@ -53,10 +53,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.nucleo.app</string>
+			<string>com.freixanet.nucleo</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.nucleo.app</string>
+				<string>com.freixanet.nucleo</string>
 			</array>
 		</dict>
 	</array>
