@@ -681,7 +681,7 @@ export default function ComprensionApp() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    const themeColor = theme === 'dark' ? '#121212' : '#FAFAFA';
+    const themeColor = theme === 'dark' ? '#1A1A1A' : '#FAFAFA';
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
     document
       .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')

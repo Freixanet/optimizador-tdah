@@ -21,7 +21,7 @@
 
   html.dark {
     color-scheme: dark;
-    --color-app-canvas: #121212;
+    --color-app-canvas: #1A1A1A;
     --color-app-surface: #1c1c1c;
     background-color: var(--color-app-canvas);
   }
