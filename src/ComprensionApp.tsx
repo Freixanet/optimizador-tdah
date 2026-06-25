@@ -67,6 +67,7 @@ import {
   deleteEntry,
   getActiveEntry,
   loadHistory,
+  renameEntry,
   saveHistory,
   setActiveId,
   togglePinEntry,
@@ -1413,6 +1414,26 @@ export default function ComprensionApp() {
     });
   };
 
+  const handleRenameHistory = (id: string, title: string) => {
+    setHistoryStore((prev) => {
+      const updated = renameEntry(prev, id, title);
+      saveHistory(updated);
+      if (cloudUser) {
+        const entry = updated.entries.find((item) => item.id === id);
+        if (entry) {
+          void pushHistoryEntry(entry).catch(() =>
+            setSyncError('No se pudo renombrar el mapa en la nube.')
+          );
+        }
+      }
+      return updated;
+    });
+
+    if (historyStore.activeId === id) {
+      setData((prev) => (prev ? { ...prev, title } : prev));
+    }
+  };
+
   const handleDownloadCheatsheet = async () => {
     if (!data || !activeMapId) return;
 
@@ -2067,6 +2088,7 @@ export default function ComprensionApp() {
             onSelect={handleSelectHistory}
             onDelete={handleDeleteHistory}
             onTogglePin={handleTogglePinHistory}
+            onRename={handleRenameHistory}
           />
         </div>
 
