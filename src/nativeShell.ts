@@ -29,9 +29,13 @@ export async function initNativeShell(): Promise<void> {
   if (!Capacitor.isNativePlatform() || nativeShellReady) return;
 
   syncNativeChromeTheme();
+  enableNativeShellClass();
 
   try {
-    const { App } = await import('@capacitor/app');
+    const [{ App }, { SplashScreen }] = await Promise.all([
+      import('@capacitor/app'),
+      import('@capacitor/splash-screen'),
+    ]);
 
     App.addListener('appUrlOpen', ({ url }) => {
       try {
@@ -46,10 +50,8 @@ export async function initNativeShell(): Promise<void> {
     });
 
     await waitForNextFrame();
-    await waitForNextFrame();
-
-    enableNativeShellClass();
     syncNativeChromeTheme();
+    await SplashScreen.hide().catch(() => {});
 
     const themeObserver = new MutationObserver(syncNativeChromeTheme);
     themeObserver.observe(document.documentElement, {
@@ -63,5 +65,8 @@ export async function initNativeShell(): Promise<void> {
     console.error('Native shell initialization failed', error);
     enableNativeShellClass();
     syncNativeChromeTheme();
+    void import('@capacitor/splash-screen')
+      .then(({ SplashScreen }) => SplashScreen.hide())
+      .catch(() => {});
   }
 }

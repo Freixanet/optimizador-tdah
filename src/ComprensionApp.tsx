@@ -195,6 +195,15 @@ async function processImageFile(
   }
 }
 const PAGE_BOTTOM_PAD_PX = 24;
+const TRANSFORM_TIMEOUT_MS = 150_000;
+const TRANSFORM_TIMEOUT_MESSAGE =
+  'La generación está tardando demasiado. Comprueba tu conexión e inténtalo de nuevo.';
+
+function throwIfAborted(signal?: AbortSignal | null): void {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+}
 
 function generateMapId() {
   try {
@@ -487,6 +496,7 @@ export default function ComprensionApp() {
   const stepFooterRef = useRef<HTMLDivElement>(null);
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const transformCancelledByUserRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -1136,6 +1146,7 @@ export default function ComprensionApp() {
   const fetchWithRetry = async (url: string, options: RequestInit, retries = 3) => {
     const delays = [2000, 5000];
     for (let i = 0; i < retries; i++) {
+      throwIfAborted(options.signal);
       try {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -1161,6 +1172,7 @@ export default function ComprensionApp() {
         // daily free-tier quota without changing the outcome.
         const isRetryable = error.status === undefined || error.status === 503;
         if (i === retries - 1 || !isRetryable) throw error;
+        throwIfAborted(options.signal);
         await new Promise((res) => setTimeout(res, delays[i] ?? 5000));
       }
     }
@@ -1173,6 +1185,7 @@ export default function ComprensionApp() {
       .trim();
 
   const handleCancel = () => {
+    transformCancelledByUserRef.current = true;
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setAppState('input');
@@ -1184,8 +1197,12 @@ export default function ComprensionApp() {
     setAppState('loading');
     setError(null);
 
+    transformCancelledByUserRef.current = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, TRANSFORM_TIMEOUT_MS);
 
     try {
       const mapId = generateMapId();
@@ -1320,16 +1337,24 @@ export default function ComprensionApp() {
       setIsMapOpen(isDesktop);
     } catch (err: any) {
       if (err.name === 'AbortError') {
+        if (transformCancelledByUserRef.current) {
+          setAppState('input');
+          return;
+        }
+        setError(TRANSFORM_TIMEOUT_MESSAGE);
         setAppState('input');
         return;
       }
       console.error(err);
-      setError(
-        err.message ||
-          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.'
-      );
+      const rawMessage = err.message || '';
+      const friendlyMessage = rawMessage.includes('did not match the expected pattern')
+        ? 'No se pudo conectar con el servidor. Comprueba tu conexión a internet e inténtalo de nuevo.'
+        : rawMessage ||
+          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.';
+      setError(friendlyMessage);
       setAppState('input');
     } finally {
+      window.clearTimeout(timeoutId);
       abortControllerRef.current = null;
     }
   };

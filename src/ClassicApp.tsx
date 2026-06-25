@@ -149,6 +149,15 @@ async function processImageFile(
   }
 }
 const PAGE_BOTTOM_PAD_PX = 24;
+const TRANSFORM_TIMEOUT_MS = 150_000;
+const TRANSFORM_TIMEOUT_MESSAGE =
+  'La generación está tardando demasiado. Comprueba tu conexión e inténtalo de nuevo.';
+
+function throwIfAborted(signal?: AbortSignal | null): void {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+}
 
 function isSingleUrl(text: string): boolean {
   return /^https?:\/\/\S+$/.test(text.trim());
@@ -271,6 +280,7 @@ export default function ClassicApp() {
   const stepFooterRef = useRef<HTMLDivElement>(null);
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const transformCancelledByUserRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -900,6 +910,7 @@ export default function ClassicApp() {
   const fetchWithRetry = async (url: string, options: RequestInit, retries = 3) => {
     const delays = [2000, 5000];
     for (let i = 0; i < retries; i++) {
+      throwIfAborted(options.signal);
       try {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -925,6 +936,7 @@ export default function ClassicApp() {
         // daily free-tier quota without changing the outcome.
         const isRetryable = error.status === undefined || error.status === 503;
         if (i === retries - 1 || !isRetryable) throw error;
+        throwIfAborted(options.signal);
         await new Promise((res) => setTimeout(res, delays[i] ?? 5000));
       }
     }
@@ -937,6 +949,7 @@ export default function ClassicApp() {
       .trim();
 
   const handleCancel = () => {
+    transformCancelledByUserRef.current = true;
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setAppState('input');
@@ -948,8 +961,12 @@ export default function ClassicApp() {
     setAppState('loading');
     setError(null);
 
+    transformCancelledByUserRef.current = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, TRANSFORM_TIMEOUT_MS);
 
     try {
       let body: Record<string, string>;
@@ -1038,6 +1055,11 @@ export default function ClassicApp() {
       setIsMapOpen(isDesktop);
     } catch (err: any) {
       if (err.name === 'AbortError') {
+        if (transformCancelledByUserRef.current) {
+          setAppState('input');
+          return;
+        }
+        setError(TRANSFORM_TIMEOUT_MESSAGE);
         setAppState('input');
         return;
       }
@@ -1050,6 +1072,7 @@ export default function ClassicApp() {
       setError(friendlyMessage);
       setAppState('input');
     } finally {
+      window.clearTimeout(timeoutId);
       abortControllerRef.current = null;
     }
   };
