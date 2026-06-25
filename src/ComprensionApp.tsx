@@ -610,6 +610,11 @@ export default function ComprensionApp() {
   }, [historyStore, cloudUser]);
 
   const scrollPageToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const scrollRoot = contentRef.current;
+    if (scrollRoot) {
+      scrollRoot.scrollTo({ top: 0, left: 0, behavior });
+      return;
+    }
     window.scrollTo({ top: 0, left: 0, behavior });
   }, []);
 
@@ -639,19 +644,9 @@ export default function ComprensionApp() {
     if (appState !== 'result') return;
 
     requestAnimationFrame(() => {
-      if (!viewAll && !isComplete) {
-        contentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-      } else {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      }
+      contentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     });
   }, [appState, historyStore.activeId, viewAll, isComplete]);
-
-  React.useEffect(() => {
-    if (appState === 'result' && data) {
-      setIsIndexExpanded(true);
-    }
-  }, [appState, data, historyStore.activeId]);
 
   React.useEffect(() => {
     const handleResize = () => {
@@ -1320,6 +1315,7 @@ export default function ComprensionApp() {
       setCurrentStep(0);
       setIsComplete(false);
       setViewAll(false);
+      setIsIndexExpanded(true);
       setIsMapOpen(isDesktop);
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -1610,6 +1606,9 @@ export default function ComprensionApp() {
   React.useEffect(() => {
     if (appState !== 'result' || !viewAll || isComplete || !data?.steps) return;
 
+    const scrollRoot = contentRef.current;
+    if (!scrollRoot) return;
+
     const sectionIds = [
       'section-resumen',
       ...data.steps.map((_: any, i: number) => `section-step-${i + 1}`),
@@ -1632,7 +1631,7 @@ export default function ComprensionApp() {
         }
       },
       {
-        root: null,
+        root: scrollRoot,
         threshold: [0, 0.25, 0.5],
         rootMargin: '-15% 0px -50% 0px',
       }

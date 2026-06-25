@@ -186,17 +186,29 @@ export function updateActiveSession(
 ): HistoryStore {
   if (!store.activeId) return store;
 
-  const now = Date.now();
-  const entries = store.entries.map((entry) =>
-    entry.id === store.activeId
-      ? {
-          ...entry,
-          title: ((session.data as { title?: string } | undefined)?.title || entry.title) as string,
-          updatedAt: now,
-          session,
-        }
-      : entry
-  );
+  const entries = store.entries.map((entry) => {
+    if (entry.id !== store.activeId) return entry;
+
+    const title = ((session.data as { title?: string } | undefined)?.title || entry.title) as string;
+    const progressChanged =
+      entry.session.currentStep !== session.currentStep ||
+      entry.session.isComplete !== session.isComplete ||
+      entry.session.viewAll !== session.viewAll;
+    const titleChanged = title !== entry.title;
+
+    if (!progressChanged && !titleChanged) {
+      if (entry.session.data === session.data) return entry;
+      return { ...entry, title, session };
+    }
+
+    const now = Date.now();
+    return {
+      ...entry,
+      title,
+      updatedAt: now,
+      session,
+    };
+  });
 
   return { ...store, entries };
 }
