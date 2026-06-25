@@ -7,19 +7,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Keep the native surface behind the WebView aligned with Núcleo's
-        // canvas. It is exposed while iOS resizes the view for the keyboard.
-        let canvas = UIColor(red: 250.0 / 255.0, green: 250.0 / 255.0, blue: 250.0 / 255.0, alpha: 1)
-        window?.backgroundColor = canvas
-        guard let bridgeController = window?.rootViewController as? CAPBridgeViewController else {
-            return true
-        }
-
-        bridgeController.loadViewIfNeeded()
-        bridgeController.view.backgroundColor = canvas
-        bridgeController.webView?.backgroundColor = canvas
-        bridgeController.webView?.scrollView.backgroundColor = canvas
-        NativeGlassOverlayManager.installIfNeeded(on: bridgeController)
         return true
     }
 
