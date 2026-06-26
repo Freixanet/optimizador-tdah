@@ -36,11 +36,14 @@ import {
 import { apiUrl } from './apiBase';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
-import NucleoIcon from './components/NucleoIcon';
+import AtomCanvasIcon from './components/AtomCanvasIcon';
+import MenuTwoLines from './components/MenuTwoLines';
 import ProfileAvatar from './components/ProfileAvatar';
 import LoadingState from './components/LoadingState';
 import ReadingProgressBar from './components/ReadingProgressBar';
 import BalancedText from './components/BalancedText';
+import { useKeyboardDismissOnSwipeDown } from './hooks/useDismissKeyboardOnPullDown';
+import { useNativeComposer, type NativeComposerMetrics } from './hooks/useNativeComposer';
 import type {
   ActionMapData,
   CalloutLabel,
@@ -76,7 +79,7 @@ import {
   type SourceType,
   type HistoryEntry,
 } from './history';
-import { isYouTubeUrl } from '@/youtube';
+import { detectUrlInput, friendlyTransformError, type UrlInputDetection } from './urlInput';
 import {
   deleteCloudHistoryEntry,
   migrateLocalHistory,
@@ -104,6 +107,11 @@ type UploadedFile = {
 const DESKTOP_BREAKPOINT = 1024;
 const RECENT_IMAGES_KEY = 'nucleo-recent-images';
 const MAX_RECENT_IMAGES = 8;
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_MESSAGE =
+  'El archivo supera el límite de 15 MB. Prueba con un archivo más pequeño.';
+const LOCAL_FILE_READ_ERROR_MESSAGE =
+  'No se pudo leer el archivo en el dispositivo. Prueba con otro archivo.';
 const IMAGE_MAX_DIMENSION = 1024;
 const DEFAULT_CALLOUT_LABELS: Record<string, CalloutLabel> = {
   action: 'Para aplicarlo',
@@ -368,16 +376,13 @@ function normalizeMapData(input: any): ActionMapData | null {
   return normalized;
 }
 
-function isSingleUrl(text: string): boolean {
-  return /^https?:\/\/\S+$/.test(text.trim());
-}
-
 function resolveSourceType(text: string, uploadedFile: UploadedFile | null): SourceType {
   if (uploadedFile?.isPdf) return 'pdf';
   if (uploadedFile) return 'file';
   const trimmed = text.trim();
-  if (isYouTubeUrl(trimmed)) return 'youtube';
-  if (isSingleUrl(trimmed)) return 'link';
+  const detected = detectUrlInput(text);
+  if (detected.kind === 'youtube') return 'youtube';
+  if (detected.kind === 'link') return 'link';
   if (/\[\d{1,2}:\d{2}/.test(trimmed)) return 'youtube';
   return 'text';
 }
@@ -446,6 +451,7 @@ function authErrorMessage(err: unknown): string {
 }
 
 export default function ComprensionApp() {
+  useKeyboardDismissOnSwipeDown();
   const initialHistory: HistoryStore =
     typeof window !== 'undefined' ? loadHistory() : { activeId: null, entries: [] };
   const initialActive = getActiveEntry(initialHistory);
@@ -495,6 +501,7 @@ export default function ComprensionApp() {
   const mainRef = useRef<HTMLElement>(null);
   const stepFooterRef = useRef<HTMLDivElement>(null);
   const [contentBottomPad, setContentBottomPad] = useState(PAGE_BOTTOM_PAD_PX);
+  const [nativeComposerReservedHeight, setNativeComposerReservedHeight] = useState(184);
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledByUserRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -544,6 +551,56 @@ export default function ComprensionApp() {
   const [sidebarDragX, setSidebarDragX] = useState<number | null>(null);
   const [isSidebarSettling, setIsSidebarSettling] = useState(false);
   const sheetTransitionCompleteRef = useRef<(() => void) | null>(null);
+
+  const handleNativeComposerMetrics = useCallback((metrics: NativeComposerMetrics) => {
+    setNativeComposerReservedHeight(metrics.visible ? Math.max(120, metrics.height + 24) : PAGE_BOTTOM_PAD_PX);
+  }, []);
+
+  const { isNativeIOS, clearText, setLayout: setNativeComposerLayout } = useNativeComposer({
+    appState,
+    onChange: setInputText,
+    onSend: (text) => {
+      setInputText(text);
+      // Wait a tick for state to update, then transform
+      setTimeout(() => {
+        const btn = document.getElementById('hidden-submit-btn');
+        if (btn) btn.click();
+      }, 0);
+    },
+    onAttach: () => fileInputRef.current?.click(),
+    onMenu: () => setProfileMenuOpen(true),
+    onMetricsChange: handleNativeComposerMetrics,
+    mainRef,
+    attachment: uploadedFile
+      ? {
+          name: uploadedFile.name,
+          previewUrl: uploadedFile.previewUrl,
+          isImage: uploadedFile.isImage,
+        }
+      : null,
+    visible:
+      appState === 'input' &&
+      !(profileMenuOpen || chatOpen),
+  });
+
+  const syncNativeComposerSheetLayout = useCallback(
+    (
+      offsetX: number,
+      options: { animated?: boolean; durationMs?: number; curve?: 'easeOut' | 'easeInOut' | 'linear' } = {}
+    ) => {
+      if (!isNativeIOS) return;
+      const mainWidth = mainRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+      setNativeComposerLayout({
+        mainOffsetX: offsetX,
+        mainWidth,
+        sidebarOpen: offsetX > 0.5,
+        animated: options.animated ?? false,
+        durationMs: options.durationMs,
+        curve: options.curve,
+      });
+    },
+    [isNativeIOS, setNativeComposerLayout]
+  );
 
   const totalSteps = data?.steps?.length ?? 0;
   const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps ?? []), [data]);
@@ -621,12 +678,7 @@ export default function ComprensionApp() {
   }, [historyStore, cloudUser]);
 
   const scrollPageToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    const scrollRoot = contentRef.current;
-    if (scrollRoot) {
-      scrollRoot.scrollTo({ top: 0, left: 0, behavior });
-      return;
-    }
-    window.scrollTo({ top: 0, left: 0, behavior });
+    contentRef.current?.scrollTo({ top: 0, behavior });
   }, []);
 
   React.useEffect(() => {
@@ -698,6 +750,7 @@ export default function ComprensionApp() {
         setIsSidebarSettling(false);
         setSidebarDragX(null);
         sidebarDragXRef.current = null;
+        syncNativeComposerSheetLayout(targetX, { animated: false });
         onComplete?.();
         return;
       }
@@ -707,13 +760,19 @@ export default function ComprensionApp() {
       sheetTransitionCompleteRef.current = onComplete ?? null;
       setSidebarDragX(currentX);
       sidebarDragXRef.current = currentX;
+      syncNativeComposerSheetLayout(currentX, { animated: false });
 
       requestAnimationFrame(() => {
         setSidebarDragX(targetX);
         sidebarDragXRef.current = targetX;
+        syncNativeComposerSheetLayout(targetX, {
+          animated: true,
+          durationMs: 300,
+          curve: 'easeOut',
+        });
       });
     },
-    [getMobileSidebarWidthPx, isDesktop, isMapOpen]
+    [getMobileSidebarWidthPx, isDesktop, isMapOpen, syncNativeComposerSheetLayout]
   );
 
   const closeMobileSidebar = useCallback(() => {
@@ -832,8 +891,9 @@ export default function ComprensionApp() {
         : Math.max(0, Math.min(width, width + deltaX));
       sidebarDragXRef.current = dragX;
       setSidebarDragX(dragX);
+      syncNativeComposerSheetLayout(dragX, { animated: false });
     },
-    [getMobileSidebarWidthPx, isDesktop, lockMainScroll]
+    [getMobileSidebarWidthPx, isDesktop, lockMainScroll, syncNativeComposerSheetLayout]
   );
 
   const handleMainTouchEnd = useCallback(() => {
@@ -934,16 +994,18 @@ export default function ComprensionApp() {
       if (event.propertyName !== 'transform' || !isSidebarSettling) return;
 
       const onComplete = sheetTransitionCompleteRef.current;
+      const finalX = sidebarDragXRef.current ?? 0;
       sheetTransitionCompleteRef.current = null;
       setIsSidebarSettling(false);
       setSidebarDragX(null);
       sidebarDragXRef.current = null;
+      syncNativeComposerSheetLayout(finalX, { animated: false });
       onComplete?.();
     };
 
     node.addEventListener('transitionend', handleTransitionEnd);
     return () => node.removeEventListener('transitionend', handleTransitionEnd);
-  }, [isDesktop, isSidebarSettling]);
+  }, [isDesktop, isSidebarSettling, syncNativeComposerSheetLayout]);
 
   React.useEffect(() => {
     const node = mainRef.current;
@@ -1010,7 +1072,18 @@ export default function ComprensionApp() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(MAX_UPLOAD_SIZE_MESSAGE);
+      return;
+    }
+
+    setError(null);
+    const handleLocalReadError = () => {
+      setError(LOCAL_FILE_READ_ERROR_MESSAGE);
+    };
 
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     const isVideo = file.type.startsWith('video/');
@@ -1029,7 +1102,7 @@ export default function ComprensionApp() {
           });
         })
         .catch(() => {
-          setError('No se pudo leer el vídeo seleccionado.');
+          setError(LOCAL_FILE_READ_ERROR_MESSAGE);
         });
     } else if (isPdf) {
       const reader = new FileReader();
@@ -1045,6 +1118,8 @@ export default function ComprensionApp() {
           mimeType: 'application/pdf',
         });
       };
+      reader.onerror = handleLocalReadError;
+      reader.onabort = handleLocalReadError;
       reader.readAsDataURL(file);
     } else {
       const reader = new FileReader();
@@ -1052,9 +1127,10 @@ export default function ComprensionApp() {
         setInputText(event.target?.result as string);
         setUploadedFile({ name: file.name, size: file.size });
       };
+      reader.onerror = handleLocalReadError;
+      reader.onabort = handleLocalReadError;
       reader.readAsText(file);
     }
-    e.target.value = '';
   };
 
   const persistRecentImages = (images: string[]) => {
@@ -1194,6 +1270,15 @@ export default function ComprensionApp() {
   const handleTransform = async () => {
     if (!inputText.trim() && !uploadedFile) return;
 
+    let urlDetection: UrlInputDetection | null = null;
+    if (!uploadedFile && inputText.trim()) {
+      urlDetection = detectUrlInput(inputText);
+      if (urlDetection.kind === 'invalid') {
+        setError(urlDetection.message);
+        return;
+      }
+    }
+
     setAppState('loading');
     setError(null);
 
@@ -1255,25 +1340,24 @@ export default function ComprensionApp() {
           mapId,
         };
       } else {
-        const trimmed = inputText.trim();
-        if (isYouTubeUrl(trimmed)) {
+        if (urlDetection?.kind === 'youtube') {
           body = {
-            text: trimmed,
+            text: urlDetection.url,
             type: 'youtube',
             preferredModel: modelPreference,
             intent,
             outputLanguage: resolvedOutputLanguage,
-            sourceLabel: trimmed,
+            sourceLabel: urlDetection.url,
             mapId,
           };
-        } else if (isSingleUrl(trimmed)) {
+        } else if (urlDetection?.kind === 'link') {
           body = {
-            text: trimmed,
+            text: urlDetection.url,
             type: 'link',
             preferredModel: modelPreference,
             intent,
             outputLanguage: resolvedOutputLanguage,
-            sourceLabel: trimmed,
+            sourceLabel: urlDetection.url,
             mapId,
           };
         } else {
@@ -1347,10 +1431,13 @@ export default function ComprensionApp() {
       }
       console.error(err);
       const rawMessage = err.message || '';
-      const friendlyMessage = rawMessage.includes('did not match the expected pattern')
-        ? 'No se pudo conectar con el servidor. Comprueba tu conexión a internet e inténtalo de nuevo.'
-        : rawMessage ||
-          'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.';
+      const transformSourceKind =
+        urlDetection?.kind === 'youtube' || urlDetection?.kind === 'link'
+          ? urlDetection.kind
+          : undefined;
+      const friendlyMessage =
+        friendlyTransformError(rawMessage, transformSourceKind) ||
+        'No se pudo procesar el contenido. Revisa tu conexión o asegúrate de haber proveido una API KEY correcta en las variables de entorno.';
       setError(friendlyMessage);
       setAppState('input');
     } finally {
@@ -1546,10 +1633,14 @@ export default function ComprensionApp() {
   const scrollToSection = useCallback((idx: number) => {
     const id = idx === 0 ? 'section-resumen' : `section-step-${idx}`;
     const el = document.getElementById(id);
-    if (!el) return;
+    const scrollRoot = contentRef.current;
+    if (!el || !scrollRoot) return;
 
     scrollSpyLockRef.current = true;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const rootRect = scrollRoot.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const scrollTop = scrollRoot.scrollTop + (elRect.top - rootRect.top);
+    scrollRoot.scrollTo({ top: scrollTop, behavior: 'smooth' });
     window.setTimeout(() => {
       scrollSpyLockRef.current = false;
     }, 700);
@@ -1580,10 +1671,7 @@ export default function ComprensionApp() {
     const scrollRoot = contentRef.current;
     if (!scrollRoot) return;
 
-    const previousScrollBehavior = scrollRoot.style.scrollBehavior;
-    scrollRoot.style.scrollBehavior = 'auto';
-    scrollRoot.scrollTop = 0;
-    scrollRoot.style.scrollBehavior = previousScrollBehavior;
+    scrollRoot.scrollTo({ top: 0, behavior: 'auto' });
 
     const SHOW_THRESHOLD = 8;
     const HIDE_THRESHOLD = 120;
@@ -1591,8 +1679,9 @@ export default function ComprensionApp() {
     let footerVisible = false;
 
     const evaluate = () => {
-      if (!scrollRoot) return;
-      const { scrollTop, scrollHeight, clientHeight } = scrollRoot;
+      const scrollHeight = scrollRoot.scrollHeight;
+      const clientHeight = scrollRoot.clientHeight;
+      const scrollTop = scrollRoot.scrollTop;
       const distanceFromBottom = scrollHeight - clientHeight - scrollTop;
 
       let nextVisible = footerVisible;
@@ -1627,9 +1716,6 @@ export default function ComprensionApp() {
 
     const resizeObserver = new ResizeObserver(evaluate);
     resizeObserver.observe(scrollRoot);
-    if (scrollRoot.firstElementChild) {
-      resizeObserver.observe(scrollRoot.firstElementChild);
-    }
 
     return () => {
       scrollRoot.removeEventListener('scroll', onScroll);
@@ -2122,16 +2208,13 @@ export default function ComprensionApp() {
             {renderProfileTrigger('expanded')}
             <button
               onClick={handleNewMap}
-              className="group relative overflow-hidden flex items-center gap-2 py-2 px-4 rounded-full font-semibold text-[#1A1A1A] dark:text-[#EDEDED] bg-white/50 dark:bg-white/10 backdrop-blur-xl backdrop-saturate-150 border border-white/40 dark:border-white/15 shadow-[0_4px_16px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:bg-white/70 dark:hover:bg-white/15 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.7)] active:scale-[0.97] shrink-0"
+              className="group relative overflow-hidden flex items-center gap-2 py-2.5 px-5 rounded-full font-bold text-neutral-800 dark:text-neutral-200 bg-white/30 dark:bg-white/[0.03] backdrop-blur-2xl backdrop-saturate-[1.5] shadow-[0_8px_32px_rgba(0,0,0,0.04),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] hover:bg-white/50 dark:hover:bg-white/[0.06] hover:shadow-[0_12px_32px_rgba(0,0,0,0.08)] active:scale-[0.96] shrink-0"
               title="Nuevo mapa"
               aria-label="Nuevo mapa"
             >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/50 to-transparent opacity-70 dark:from-white/20"
-              />
-              <SquarePen className="relative w-4 h-4" />
-              <span className="relative">Nuevo mapa</span>
+              <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100 dark:from-white/10 pointer-events-none" />
+              <SquarePen className="relative z-10 w-4 h-4" />
+              <span className="relative z-10">Nuevo mapa</span>
             </button>
           </div>
         </div>
@@ -2641,23 +2724,30 @@ export default function ComprensionApp() {
     const hideTextInput = Boolean(uploadedFile?.isPdf);
 
     return (
-      <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col bg-app-canvas">
+      <div
+        className="app-shell flex-1 relative flex flex-col bg-app-canvas"
+        style={
+          {
+            '--composer-reserved-height': `${isNativeIOS ? nativeComposerReservedHeight : 184}px`,
+          } as React.CSSProperties
+        }
+      >
         <button
           type="button"
           onClick={toggleSidebar}
-          className="absolute left-4 top-4 z-10 inline-flex lg:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+          className="absolute left-4 top-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all active:scale-95 shrink-0"
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >
-          <Menu className="w-5 h-5" />
+          <MenuTwoLines className="w-4.5 h-4.5" />
         </button>
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8">
+        <div ref={contentRef} className="page-scroll flex-1 flex flex-col items-center justify-center px-4 sm:px-8">
           <div
             className="home-hero-copy text-center space-y-3 sm:space-y-4 max-w-2xl select-none"
             onSelectStart={(e) => e.preventDefault()}
           >
             <div className="inline-flex items-center justify-center mb-1">
-              <NucleoIcon className="text-[#1A1A1A] dark:text-[#EDEDED]" />
+              <AtomCanvasIcon />
             </div>
             <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-[#1A1A1A] dark:text-[#EDEDED] leading-[1.1]">
               ¿Qué quieres entender?
@@ -2674,18 +2764,21 @@ export default function ComprensionApp() {
                     key={option.id}
                     type="button"
                     onClick={() => setIntent(option.id)}
-                    className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+                    className={`group relative overflow-hidden rounded-[28px] px-5 py-5 text-left transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] backdrop-blur-2xl backdrop-saturate-[1.5] ${
                       isActive
-                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300'
-                        : 'border-neutral-200 bg-white/80 text-neutral-700 hover:border-neutral-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-neutral-200'
+                        ? 'bg-indigo-50/70 text-indigo-900 shadow-[0_8px_32px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,1)] dark:bg-indigo-500/10 dark:text-indigo-200 dark:shadow-[0_8px_32px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(255,255,255,0.1)]'
+                        : 'bg-white/30 text-neutral-700 shadow-[0_8px_32px_rgba(0,0,0,0.04),inset_0_1px_1px_rgba(255,255,255,0.8)] hover:bg-white/50 hover:shadow-[0_12px_32px_rgba(0,0,0,0.08)] dark:bg-white/[0.03] dark:text-neutral-300 dark:shadow-[0_8px_32px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.05)] dark:hover:bg-white/[0.06]'
                     }`}
                     aria-pressed={isActive}
                   >
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="text-sm font-semibold">{option.title}</span>
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100 dark:from-white/10" />
+                    <div className="relative z-10 flex items-center gap-3">
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-full shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] ${isActive ? 'bg-indigo-500/15 text-indigo-700 dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]' : 'bg-neutral-500/10 text-neutral-600 dark:bg-neutral-500/20 dark:text-neutral-400 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]'}`}>
+                        <Icon className="h-4 w-4 shrink-0" />
+                      </div>
+                      <span className="text-[15px] font-bold tracking-tight">{option.title}</span>
                     </div>
-                    <p className="mt-2 text-sm leading-relaxed text-current/80">
+                    <p className="relative z-10 mt-3 text-[13px] leading-relaxed text-current/70 font-medium">
                       {option.description}
                     </p>
                   </button>
@@ -2702,60 +2795,63 @@ export default function ComprensionApp() {
           )}
         </div>
 
-        <div className="shrink-0 px-4 sm:px-8 pb-[max(1rem,env(safe-area-inset-bottom))] bg-app-canvas">
+        {!isNativeIOS && (
+        <div className="composer-dock">
           <div className="max-w-3xl mx-auto">
-            <div className="rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-app-canvas shadow-sm dark:shadow-none">
-              {uploadedFile && (
-                <div className="flex items-center gap-2 px-3 pt-3">
-                  {uploadedFile.isImage && uploadedFile.previewUrl ? (
-                    <div className="relative group">
-                      <img
-                        src={uploadedFile.previewUrl}
-                        alt={uploadedFile.name}
-                        className="w-16 h-16 rounded-xl object-cover border border-neutral-200 dark:border-white/10"
-                      />
-                      <button
-                        type="button"
-                        onClick={removeFile}
-                        className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-neutral-800 text-white shadow-md hover:bg-neutral-700 transition-colors"
-                        aria-label="Quitar imagen"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="inline-flex items-center gap-2 max-w-full px-3 py-1.5 rounded-full bg-neutral-100 dark:bg-white/5 text-sm text-neutral-700 dark:text-neutral-300">
-                      <File className="w-4 h-4 shrink-0 opacity-70" />
-                      <span className="truncate max-w-[220px]">{uploadedFile.name}</span>
-                      <button
-                        type="button"
-                        onClick={removeFile}
-                        className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
-                        aria-label="Quitar archivo"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="relative overflow-visible group" ref={attachMenuRef}>
+              <div className="relative overflow-hidden rounded-[32px] bg-white/40 dark:bg-white/[0.02] backdrop-blur-3xl backdrop-saturate-[1.5] shadow-[0_12px_40px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,1)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all duration-500 hover:shadow-[0_16px_48px_rgba(0,0,0,0.08)]">
+                <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100 dark:from-white/10 pointer-events-none" />
+                <div className="relative z-10">
+                  {uploadedFile && (
+                  <div className="flex items-center gap-2 px-6 pt-5 pb-1">
+                    {uploadedFile.isImage && uploadedFile.previewUrl ? (
+                      <div className="relative group">
+                        <img
+                          src={uploadedFile.previewUrl}
+                          alt={uploadedFile.name}
+                          className="w-16 h-16 rounded-xl object-cover border border-neutral-200 dark:border-white/10"
+                        />
+                        <button
+                          type="button"
+                          onClick={removeFile}
+                          className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-neutral-800 text-white shadow-md hover:bg-neutral-700 transition-colors"
+                          aria-label="Quitar imagen"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-2 max-w-full px-3 py-1.5 rounded-full bg-neutral-100 dark:bg-white/5 text-sm text-neutral-700 dark:text-neutral-300">
+                        <File className="w-4 h-4 shrink-0 opacity-70" />
+                        <span className="truncate max-w-[220px]">{uploadedFile.name}</span>
+                        <button
+                          type="button"
+                          onClick={removeFile}
+                          className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-white/10 transition-colors"
+                          aria-label="Quitar archivo"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {!hideTextInput && (
-                <textarea
-                  ref={textareaRef}
-                  value={inputText}
-                  onChange={(e) => {
-                    setInputText(e.target.value);
-                    adjustComposerHeight(e.target);
-                  }}
-                  rows={1}
-                  placeholder={composerPlaceholder}
-                  className="w-full min-h-[4.75rem] max-h-[200px] px-4 py-3 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-snug"
-                />
-              )}
+                {!hideTextInput && (
+                  <textarea
+                    ref={textareaRef}
+                    value={inputText}
+                    onChange={(e) => {
+                      setInputText(e.target.value);
+                      adjustComposerHeight(e.target);
+                    }}
+                    rows={1}
+                    placeholder={composerPlaceholder}
+                    className="w-full min-h-[5.5rem] max-h-[200px] px-6 pt-5 pb-2 bg-transparent resize-none outline-none text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 text-base leading-snug"
+                  />
+                )}
 
-              <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                <div className="relative" ref={attachMenuRef}>
+                <div className="flex items-center justify-between px-4 pb-4 pt-1">
                   <button
                     type="button"
                     onClick={() => setAttachMenuOpen((open) => !open)}
@@ -2774,109 +2870,92 @@ export default function ComprensionApp() {
                     />
                   </button>
 
-                  {attachMenuOpen && (
-                    <div
-                      role="menu"
-                      className="absolute bottom-full left-0 mb-2 z-50 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl p-2 animate-fade-in"
-                    >
-                      <div className="px-1 pt-1 pb-2">
-                        <p className="px-1 mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-                          Recientes
-                        </p>
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              imageInputRef.current?.click();
-                              setAttachMenuOpen(false);
-                            }}
-                            className="shrink-0 w-14 h-14 rounded-lg border border-dashed border-neutral-300 dark:border-white/20 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:border-neutral-400 dark:hover:border-white/30 transition-colors"
-                            title="Elegir imagen"
-                            aria-label="Elegir imagen"
-                          >
-                            <Plus className="w-5 h-5" />
-                          </button>
-                          {recentImages.map((url, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => attachRecentImage(url)}
-                              className="shrink-0 rounded-lg overflow-hidden border border-neutral-200 dark:border-white/10 hover:ring-2 hover:ring-indigo-400/50 transition-all"
-                              title="Adjuntar imagen reciente"
-                            >
-                              <img src={url} alt="" className="w-14 h-14 object-cover" />
-                            </button>
-                          ))}
-                        </div>
-                      </div>
 
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          cameraInputRef.current?.click();
-                          setAttachMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <Camera className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
-                        Cámara
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setAttachMenuOpen(false);
-                          fileInputRef.current?.click();
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <Paperclip className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
-                        Añadir archivo o vídeo
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    id="hidden-submit-btn"
+                    type="button"
+                    onClick={handleTransform}
+                    disabled={!canSubmit || appState === 'loading'}
+                    className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95 disabled:opacity-40 select-none shrink-0 ${
+                      canSubmit && appState !== 'loading'
+                        ? 'bg-indigo-500/15 text-indigo-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)]'
+                        : 'bg-neutral-500/10 text-neutral-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-neutral-500/20 dark:text-neutral-500 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]'
+                    }`}
+                    title="Crear lectura"
+                    aria-label="Crear lectura"
+                  >
+                    <ArrowUp className="w-5 h-5" />
+                  </button>
                 </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.md,.csv,.rtf,.json,.html,.xml,.pdf,video/mp4,video/webm,video/quicktime"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  title="Subir archivo"
-                />
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  title="Hacer una foto"
-                />
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  title="Elegir imagen"
-                />
-                <button
-                  type="button"
-                  onClick={handleTransform}
-                  disabled={!canSubmit || appState === 'loading'}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white transition-all active:scale-95"
-                  title="Crear lectura"
-                  aria-label="Crear lectura"
-                >
-                  <ArrowUp className="w-5 h-5" />
-                </button>
+                </div>
               </div>
+
+              {attachMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-2 mb-2 z-[80] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-neutral-200 dark:border-white/10 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-xl shadow-xl p-2 animate-fade-in"
+                >
+                  <div className="px-1 pt-1 pb-2">
+                    <p className="px-1 mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                      Recientes
+                    </p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          imageInputRef.current?.click();
+                          setAttachMenuOpen(false);
+                        }}
+                        className="shrink-0 w-14 h-14 rounded-lg border border-dashed border-neutral-300 dark:border-white/20 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:border-neutral-400 dark:hover:border-white/30 transition-colors"
+                        title="Elegir imagen"
+                        aria-label="Elegir imagen"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                      {recentImages.map((url, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => attachRecentImage(url)}
+                          className="shrink-0 rounded-lg overflow-hidden border border-neutral-200 dark:border-white/10 hover:ring-2 hover:ring-indigo-400/50 transition-all"
+                          title="Adjuntar imagen reciente"
+                        >
+                          <img src={url} alt="" className="w-14 h-14 object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      cameraInputRef.current?.click();
+                      setAttachMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Camera className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                    Cámara
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Paperclip className="w-4 h-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+                    Añadir archivo o vídeo
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   };
@@ -3017,6 +3096,33 @@ export default function ComprensionApp() {
         )}
         </div>
       </main>
+
+      {/* Hidden inputs for file/image picking, kept outside conditional renders so native bridge can access them */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,.md,.csv,.rtf,.json,.html,.xml,.pdf,video/mp4,video/webm,video/quicktime"
+        onChange={handleFileUpload}
+        className="hidden"
+        title="Subir archivo"
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleImageUpload}
+        className="hidden"
+        title="Hacer una foto"
+      />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageUpload}
+        className="hidden"
+        title="Elegir imagen"
+      />
     </div>
   );
 }

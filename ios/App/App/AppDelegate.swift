@@ -6,7 +6,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-    private let canvasColor = UIColor(red: 250.0 / 255.0, green: 250.0 / 255.0, blue: 250.0 / 255.0, alpha: 1)
+    private let canvasColor = UIColor(red: 26.0 / 255.0, green: 26.0 / 255.0, blue: 26.0 / 255.0, alpha: 1)
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Stale Capacitor live-reload paths can point to an empty snapshot and yield a black WebView.
@@ -26,10 +26,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         bridgeController.loadViewIfNeeded()
         bridgeController.view.backgroundColor = canvasColor
-        bridgeController.webView?.isOpaque = true
+        bridgeController.webView?.isOpaque = false
         bridgeController.webView?.backgroundColor = canvasColor
         bridgeController.webView?.scrollView.backgroundColor = canvasColor
+        bridgeController.webView?.scrollView.keyboardDismissMode = .interactive
         NativeGlassOverlayManager.installIfNeeded(on: bridgeController)
+        NativeComposerManager.shared.installIfNeeded(on: bridgeController)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

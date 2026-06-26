@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { KeyboardResize } from '@capacitor/keyboard';
 
 let nativeShellReady = false;
 
@@ -32,10 +33,14 @@ export async function initNativeShell(): Promise<void> {
   enableNativeShellClass();
 
   try {
-    const [{ App }, { SplashScreen }] = await Promise.all([
+    const [{ App }, { SplashScreen }, { Keyboard }] = await Promise.all([
       import('@capacitor/app'),
       import('@capacitor/splash-screen'),
+      import('@capacitor/keyboard'),
     ]);
+
+    Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
+    Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {});
 
     App.addListener('appUrlOpen', ({ url }) => {
       try {

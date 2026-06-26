@@ -1,0 +1,263 @@
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LogOut, X } from 'lucide-react-native';
+import {
+  signInWithPassword,
+  signInWithProvider,
+  signOut,
+  signUpWithPassword,
+} from '../logic/cloudHistory';
+
+type AuthSheetProps = {
+  visible: boolean;
+  userEmail: string | null;
+  onClose: () => void;
+};
+
+function authErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'No se pudo completar el acceso.';
+  const msg = err.message.toLowerCase();
+  if (msg.includes('invalid login credentials')) return 'Email o contraseña incorrectos.';
+  if (msg.includes('user already registered')) return 'Esa cuenta ya existe. Prueba a entrar.';
+  if (msg.includes('password') && msg.includes('least'))
+    return 'La contraseña debe tener al menos 6 caracteres.';
+  return err.message;
+}
+
+export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isSignedIn = Boolean(userEmail);
+
+  const resetForm = () => {
+    setPassword('');
+    setError(null);
+    setBusy(false);
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      if (isSignUp) {
+        await signUpWithPassword(email, password);
+      } else {
+        await signInWithPassword(email, password);
+      }
+      resetForm();
+      onClose();
+    } catch (err) {
+      setError(authErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleProvider = async (provider: 'google' | 'apple') => {
+    if (busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const ok = await signInWithProvider(provider);
+      if (ok) onClose();
+    } catch (err) {
+      setError(authErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await signOut();
+      onClose();
+    } catch (err) {
+      setError(authErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView className="flex-1 bg-neutral-50 dark:bg-neutral-900">
+        <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-white/10">
+          <Text className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+            {isSignedIn ? 'Tu cuenta' : 'Sincroniza tu historial'}
+          </Text>
+          <Pressable
+            onPress={onClose}
+            className="w-9 h-9 rounded-full items-center justify-center bg-neutral-200/80 dark:bg-white/10"
+            accessibilityLabel="Cerrar"
+          >
+            <X size={18} color="#737373" />
+          </Pressable>
+        </View>
+
+        <KeyboardAvoidingView
+          className="flex-1"
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            className="flex-1"
+            contentContainerClassName="px-5 py-6"
+            keyboardShouldPersistTaps="handled"
+          >
+            {isSignedIn ? (
+              <View>
+                <View className="rounded-2xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800/60 px-4 py-4">
+                  <Text className="text-[11px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                    Cuenta conectada
+                  </Text>
+                  <Text
+                    className="mt-1.5 text-base font-semibold text-neutral-900 dark:text-neutral-100"
+                    numberOfLines={1}
+                  >
+                    {userEmail}
+                  </Text>
+                  <Text className="mt-1 text-sm text-neutral-500 dark:text-neutral-400 leading-5">
+                    Tu historial se sincroniza automáticamente entre tus dispositivos.
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={() => void handleSignOut()}
+                  disabled={busy}
+                  className="mt-6 flex-row items-center justify-center gap-2 px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-white/10 active:bg-neutral-100 dark:active:bg-white/5"
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color="#737373" />
+                  ) : (
+                    <>
+                      <LogOut size={18} color="#525252" />
+                      <Text className="font-semibold text-neutral-700 dark:text-neutral-200">
+                        Cerrar sesión
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            ) : (
+              <View>
+                <Text className="text-sm text-neutral-600 dark:text-neutral-300 leading-6 mb-5">
+                  Entra para guardar tus mapas en la nube y recuperarlos desde cualquier dispositivo.
+                </Text>
+
+                <Pressable
+                  onPress={() => void handleProvider('google')}
+                  disabled={busy}
+                  className="flex-row items-center justify-center px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800/80 active:bg-neutral-100 dark:active:bg-white/5"
+                >
+                  <Text className="font-semibold text-neutral-800 dark:text-neutral-100">
+                    Continuar con Google
+                  </Text>
+                </Pressable>
+
+                {Platform.OS === 'ios' ? (
+                  <Pressable
+                    onPress={() => void handleProvider('apple')}
+                    disabled={busy}
+                    className="mt-3 flex-row items-center justify-center px-4 py-3.5 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800/80 active:bg-neutral-100 dark:active:bg-white/5"
+                  >
+                    <Text className="font-semibold text-neutral-800 dark:text-neutral-100">
+                      Continuar con Apple
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                <View className="flex-row items-center gap-3 my-6">
+                  <View className="flex-1 h-px bg-neutral-200 dark:bg-white/10" />
+                  <Text className="text-xs font-medium text-neutral-400">o con email</Text>
+                  <View className="flex-1 h-px bg-neutral-200 dark:bg-white/10" />
+                </View>
+
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="tu@email.com"
+                  placeholderTextColor="#a3a3a3"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  className="px-4 py-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800/80 text-base text-neutral-900 dark:text-neutral-100"
+                />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Contraseña (mín. 6)"
+                  placeholderTextColor="#a3a3a3"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  textContentType={isSignUp ? 'newPassword' : 'password'}
+                  onSubmitEditing={() => void handlePasswordSubmit()}
+                  className="mt-3 px-4 py-3 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-800/80 text-base text-neutral-900 dark:text-neutral-100"
+                />
+
+                <Pressable
+                  onPress={() => void handlePasswordSubmit()}
+                  disabled={busy || !email.trim() || password.length < 6}
+                  className={`mt-4 py-3.5 rounded-xl items-center justify-center ${
+                    busy || !email.trim() || password.length < 6
+                      ? 'bg-indigo-600/40'
+                      : 'bg-indigo-600 active:bg-indigo-700'
+                  }`}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text className="text-white font-bold text-base">
+                      {isSignUp ? 'Crear cuenta' : 'Entrar'}
+                    </Text>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setIsSignUp((value) => !value);
+                    setError(null);
+                  }}
+                  className="mt-4 items-center"
+                >
+                  <Text className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                    {isSignUp ? '¿Ya tienes cuenta? Entrar' : '¿Primera vez? Crear cuenta'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {error ? (
+              <View className="mt-5 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3">
+                <Text className="text-sm font-medium text-red-600 dark:text-red-300">{error}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+}

@@ -1,26 +1,25 @@
 import type { CapacitorConfig } from '@capacitor/cli';
+import { KeyboardResize, KeyboardStyle } from '@capacitor/keyboard';
 
 const config: CapacitorConfig = {
   appId: 'com.freixanet.nucleo',
-  appName: 'Nucleo',
+  appName: 'Núcleo',
   webDir: 'dist',
-  backgroundColor: '#fafafa',
-  server: {
-    androidScheme: 'https',
-    iosScheme: 'https',
-  },
+  backgroundColor: '#1A1A1A',
   ios: {
-    backgroundColor: '#fafafa',
-    // The web UI owns its safe areas through viewport-fit=cover and CSS env().
-    // Letting UIKit add automatic insets as well makes fixed panels drift under
-    // the status bar and creates a second scroll coordinate system.
     contentInset: 'never',
+    backgroundColor: '#1A1A1A',
   },
   plugins: {
+    Keyboard: {
+      resize: KeyboardResize.None,
+      style: KeyboardStyle.Dark,
+      resizeOnFullScreen: true,
+    },
     SplashScreen: {
       launchAutoHide: true,
       launchShowDuration: 400,
-      backgroundColor: '#fafafa',
+      backgroundColor: '#1A1A1A',
     },
   },
 };
