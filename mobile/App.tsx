@@ -1,8 +1,8 @@
 import './global.css';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AuthSheet from './src/components/AuthSheet';
 import { AppSessionProvider, useAppSession } from './src/context/AppSessionContext';
@@ -13,6 +13,24 @@ import { getAppVariant, switchAppVariant, type AppVariant } from './src/logic/ap
 import { completeOAuthRedirect } from './src/logic/cloudHistory';
 import ComprensionApp from './src/screens/ComprensionApp';
 import ClassicShell from './src/screens/classic/ClassicShell';
+
+function PreviewMobileBanner() {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.previewBanner,
+        {
+          top: insets.top,
+        },
+      ]}
+    >
+      <Text style={styles.previewBannerText}>PREVIEW MOBILE OK</Text>
+    </View>
+  );
+}
 
 function AuthHost() {
   const session = useAppSession();
@@ -77,27 +95,48 @@ export default function App() {
       });
   }, []);
 
-  if (!ready) {
-    return (
-      <View className="flex-1 bg-neutral-50 dark:bg-neutral-900 items-center justify-center">
-        <ActivityIndicator size="large" color="#4f46e5" />
-      </View>
-    );
-  }
+  const appContent = !ready ? (
+    <View className="flex-1 bg-neutral-50 dark:bg-neutral-900 items-center justify-center">
+      <ActivityIndicator size="large" color="#4f46e5" />
+    </View>
+  ) : bootError ? (
+    <View className="flex-1 items-center justify-center px-6 bg-neutral-50 dark:bg-neutral-900">
+      <Text className="text-center text-neutral-700 dark:text-neutral-200">{bootError}</Text>
+    </View>
+  ) : (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        {bootError ? (
-          <View className="flex-1 items-center justify-center px-6 bg-neutral-50 dark:bg-neutral-900">
-            <Text className="text-center text-neutral-700 dark:text-neutral-200">{bootError}</Text>
-          </View>
-        ) : (
-          <ThemeProvider>
-            <AppShell />
-          </ThemeProvider>
-        )}
+        <View style={{ flex: 1 }}>
+          {appContent}
+          <PreviewMobileBanner />
+        </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  previewBanner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    elevation: 9999,
+    backgroundColor: '#16a34a',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  previewBannerText: {
+    color: '#ffffff',
+    textAlign: 'center',
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+});
