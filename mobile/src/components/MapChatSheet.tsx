@@ -16,6 +16,7 @@ import { MessageSquareText, X } from 'lucide-react-native';
 import { apiUrl } from '../logic/apiBase';
 import type { ActionMapData, ChatTurn, MapChatResponse } from '../logic/contracts';
 import { supabase } from '../logic/supabase';
+import GlassSurface from './GlassSurface';
 
 type MapChatSheetProps = {
   visible: boolean;
@@ -234,23 +235,25 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-white/10">
-            <View className="flex-1 pr-3">
-              <Text className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                Preguntar sobre este mapa
-              </Text>
-              <Text className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
-                Responde solo con el contenido de esta lectura y sus referencias.
-              </Text>
+          <GlassSurface liquid borderRadius={0} className="border-b border-neutral-200/60 dark:border-white/10">
+            <View className="flex-row items-center justify-between px-5 py-4">
+              <View className="flex-1 pr-3">
+                <Text className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                  Preguntar sobre este mapa
+                </Text>
+                <Text className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                  Responde solo con el contenido de esta lectura y sus referencias.
+                </Text>
+              </View>
+              <Pressable
+                onPress={onClose}
+                className="w-9 h-9 rounded-full items-center justify-center bg-neutral-200/80 dark:bg-white/10"
+                accessibilityLabel="Cerrar chat"
+              >
+                <X size={18} color="#737373" />
+              </Pressable>
             </View>
-            <Pressable
-              onPress={onClose}
-              className="w-9 h-9 rounded-full items-center justify-center bg-neutral-200/80 dark:bg-white/10"
-              accessibilityLabel="Cerrar chat"
-            >
-              <X size={18} color="#737373" />
-            </Pressable>
-          </View>
+          </GlassSurface>
 
           {suggestedQuestions.length > 0 ? (
             <View className="px-5 py-3 border-b border-neutral-200 dark:border-white/10">
@@ -303,37 +306,39 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
             ) : null}
           </ScrollView>
 
-          <View className="border-t border-neutral-200 dark:border-white/10 px-5 py-4">
-            <View className="flex-row gap-3 items-end">
-              <TextInput
-                value={chatInput}
-                onChangeText={setChatInput}
-                placeholder="Haz una pregunta sobre este mapa…"
-                placeholderTextColor="#a3a3a3"
-                multiline
-                textAlignVertical="top"
-                editable={!chatBusy}
-                className="flex-1 min-h-[72px] max-h-32 rounded-[20px] border border-neutral-200 dark:border-white/10 px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100"
-              />
-              <Pressable
-                onPress={() => void handleSubmit()}
-                disabled={chatBusy || !chatInput.trim()}
-                className={`rounded-[20px] px-4 py-3 flex-row items-center gap-2 ${
-                  chatBusy || !chatInput.trim()
-                    ? 'bg-indigo-600/40'
-                    : 'bg-indigo-600 active:bg-indigo-700'
-                }`}
-                accessibilityLabel="Enviar pregunta"
-              >
-                <MessageSquareText size={16} color="#fff" />
-                <Text className="text-sm font-semibold text-white">
-                  {chatBusy ? 'Pensando…' : 'Preguntar'}
-                </Text>
-              </Pressable>
-            </View>
-            {chatError ? (
-              <Text className="mt-3 text-sm text-amber-700 dark:text-amber-300">{chatError}</Text>
-            ) : null}
+          <View className="px-5 py-4">
+            <GlassSurface liquid borderRadius={20} className="overflow-hidden">
+              <View className="flex-row gap-3 items-end px-3 py-3">
+                <TextInput
+                  value={chatInput}
+                  onChangeText={setChatInput}
+                  placeholder="Haz una pregunta sobre este mapa…"
+                  placeholderTextColor="#a3a3a3"
+                  multiline
+                  textAlignVertical="top"
+                  editable={!chatBusy}
+                  className="flex-1 min-h-[72px] max-h-32 rounded-[20px] border border-neutral-200/80 dark:border-white/10 px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100 bg-white/70 dark:bg-neutral-900/40"
+                />
+                <Pressable
+                  onPress={() => void handleSubmit()}
+                  disabled={chatBusy || !chatInput.trim()}
+                  className={`rounded-[20px] px-4 py-3 flex-row items-center gap-2 ${
+                    chatBusy || !chatInput.trim()
+                      ? 'bg-indigo-600/40'
+                      : 'bg-indigo-600 active:bg-indigo-700'
+                  }`}
+                  accessibilityLabel="Enviar pregunta"
+                >
+                  <MessageSquareText size={16} color="#fff" />
+                  <Text className="text-sm font-semibold text-white">
+                    {chatBusy ? 'Pensando…' : 'Preguntar'}
+                  </Text>
+                </Pressable>
+              </View>
+              {chatError ? (
+                <Text className="px-3 pb-3 text-sm text-amber-700 dark:text-amber-300">{chatError}</Text>
+              ) : null}
+            </GlassSurface>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>

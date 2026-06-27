@@ -39,7 +39,7 @@ export default function HistoryEntryGlassMenu({
       <View style={styles.root}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Cerrar menú" />
         <View pointerEvents="box-none" style={[styles.menuHost, { top, left, width: MENU_WIDTH }]}>
-          <GlassSurface className="rounded-[20px] overflow-hidden shadow-xl">
+          <GlassSurface liquid borderRadius={20} className="rounded-[20px] overflow-hidden shadow-xl">
             <Pressable
               onPress={() => {
                 onRename(menu.entry);

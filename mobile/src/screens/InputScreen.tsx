@@ -95,9 +95,10 @@ export default function InputScreen() {
                     }}
                     className="rounded-[20px] overflow-hidden active:opacity-95"
                   >
-                    <GlassSurface
-                      className="rounded-[20px]"
-                      overlayClassName={
+            <GlassSurface
+              liquid={false}
+              className="rounded-[20px]"
+              overlayClassName={
                         isActive
                           ? 'bg-indigo-50/75 dark:bg-indigo-500/[0.12]'
                           : 'bg-white/45 dark:bg-white/[0.04]'

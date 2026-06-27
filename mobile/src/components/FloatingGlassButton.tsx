@@ -47,12 +47,12 @@ export function FloatingGlassShell({
     return (
       <View style={[styles.shadow, circleSizeStyle]}>
         <GlassSurface
+          liquid
+          borderRadius={FLOATING_CIRCLE_SIZE / 2}
           className={`h-full w-full overflow-hidden rounded-full border ${
             isDark ? 'border-white/10' : 'border-white/60'
           }`}
           contentClassName="h-full w-full items-center justify-center"
-          overlayClassName={isDark ? 'bg-white/[0.06]' : 'bg-white/35'}
-          intensity={isDark ? 30 : 36}
         >
           <View style={styles.circleContent}>{children}</View>
         </GlassSurface>
@@ -63,12 +63,12 @@ export function FloatingGlassShell({
   return (
     <View style={styles.shadow}>
       <GlassSurface
+        liquid
+        borderRadius={9999}
         className={`overflow-hidden rounded-full border ${
           isDark ? 'border-white/10' : 'border-white/60'
         }`}
         contentClassName="items-center justify-center"
-        overlayClassName={isDark ? 'bg-white/[0.06]' : 'bg-white/35'}
-        intensity={isDark ? 30 : 36}
       >
         <View style={styles.pillContent}>{children}</View>
       </GlassSurface>

@@ -43,8 +43,9 @@ export default function ModelChip({ value, onChange, disabled = false }: ModelCh
         <Pressable className="flex-1 bg-black/40 justify-end" onPress={() => setOpen(false)}>
           <Pressable onPress={(event) => event.stopPropagation()}>
             <GlassSurface
+              liquid
+              borderRadius={22}
               className="rounded-t-[22px] mx-0"
-              overlayClassName={isDark ? 'bg-neutral-900/88' : 'bg-white/92'}
             >
               <View className="px-4 pt-4 pb-6">
                 <View className="flex-row items-center justify-between mb-3">

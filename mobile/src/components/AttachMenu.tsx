@@ -63,8 +63,9 @@ export default function AttachMenu({
         >
           <View className="rounded-[20px] overflow-hidden border border-neutral-200/70 dark:border-white/[0.08]">
             <GlassSurface
+              liquid
+              borderRadius={20}
               className="rounded-[20px]"
-              overlayClassName={isDark ? 'bg-neutral-900/82' : 'bg-white/88'}
             >
               <View className="p-1.5">
                 <Pressable

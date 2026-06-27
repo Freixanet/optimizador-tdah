@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleProp, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { BLUR_INTENSITY } from '@shared/uiTokens';
 import { useTheme } from '../context/ThemeContext';
+import LiquidGlassSurface, { type LiquidGlassVariant } from './LiquidGlassSurface';
 
 type GlassSurfaceProps = {
   children: React.ReactNode;
@@ -14,7 +15,14 @@ type GlassSurfaceProps = {
   solid?: boolean;
   contentClassName?: string;
   onShellLayout?: (event: import('react-native').LayoutChangeEvent) => void;
+  /** Native iOS 26 Liquid Glass (floating UI only). */
+  liquid?: boolean;
+  borderRadius?: number;
 };
+
+function mapLiquidVariant(variant: 'default' | 'composer'): LiquidGlassVariant {
+  return variant === 'composer' ? 'composer' : 'regular';
+}
 
 export default function GlassSurface({
   children,
@@ -26,8 +34,34 @@ export default function GlassSurface({
   solid = false,
   contentClassName = '',
   onShellLayout,
+  liquid = false,
+  borderRadius = 20,
 }: GlassSurfaceProps) {
   const { isDark } = useTheme();
+
+  if (liquid) {
+    const tint =
+      variant === 'composer'
+        ? isDark
+          ? 'rgba(38, 38, 38, 0.35)'
+          : 'rgba(255, 255, 255, 0.45)'
+        : undefined;
+
+    return (
+      <View className={className} style={style} onLayout={onShellLayout}>
+        <LiquidGlassSurface
+          style={StyleSheet.absoluteFill}
+          borderRadius={borderRadius}
+          variant={mapLiquidVariant(variant)}
+          tintColor={tint}
+        >
+          <View />
+        </LiquidGlassSurface>
+        <View className={`relative z-10 ${contentClassName}`.trim()}>{children}</View>
+      </View>
+    );
+  }
+
   const resolvedIntensity =
     intensity ?? (variant === 'composer' ? (isDark ? 28 : 24) : BLUR_INTENSITY);
   const overlay =

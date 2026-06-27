@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   list: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 10,
     backgroundColor: 'transparent',
   },

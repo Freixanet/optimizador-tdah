@@ -18,6 +18,7 @@ import {
   signOut,
   signUpWithPassword,
 } from '../logic/cloudHistory';
+import GlassSurface from './GlassSurface';
 
 type AuthSheetProps = {
   visible: boolean;
@@ -104,18 +105,20 @@ export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProp
       onRequestClose={onClose}
     >
       <SafeAreaView className="flex-1 bg-neutral-50 dark:bg-neutral-900">
-        <View className="flex-row items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-white/10">
-          <Text className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-            {isSignedIn ? 'Tu cuenta' : 'Sincroniza tu historial'}
-          </Text>
-          <Pressable
-            onPress={onClose}
-            className="w-9 h-9 rounded-full items-center justify-center bg-neutral-200/80 dark:bg-white/10"
-            accessibilityLabel="Cerrar"
-          >
-            <X size={18} color="#737373" />
-          </Pressable>
-        </View>
+        <GlassSurface liquid borderRadius={0} className="border-b border-neutral-200/60 dark:border-white/10">
+          <View className="flex-row items-center justify-between px-5 py-4">
+            <Text className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+              {isSignedIn ? 'Tu cuenta' : 'Sincroniza tu historial'}
+            </Text>
+            <Pressable
+              onPress={onClose}
+              className="w-9 h-9 rounded-full items-center justify-center bg-neutral-200/80 dark:bg-white/10"
+              accessibilityLabel="Cerrar"
+            >
+              <X size={18} color="#737373" />
+            </Pressable>
+          </View>
+        </GlassSurface>
 
         <KeyboardAvoidingView
           className="flex-1"

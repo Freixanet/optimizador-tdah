@@ -206,7 +206,9 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
             accessibilityLabel="Cerrar menú de cuenta"
           />
           <View className={menuPanelClass} style={menuPanelStyle} pointerEvents="box-none">
-            <GlassSurface className="w-72 rounded-[20px] shadow-xl">{renderMenuContent()}</GlassSurface>
+            <GlassSurface liquid borderRadius={20} className="w-72 rounded-[20px] shadow-xl">
+              {renderMenuContent()}
+            </GlassSurface>
           </View>
         </>
       ) : null}
