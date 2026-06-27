@@ -24,6 +24,60 @@ type MapChatSheetProps = {
   mapData: ActionMapData;
 };
 
+type ParsedAssistantTurn = {
+  answer: string;
+  citations: MapChatResponse['citations'];
+  limitations: MapChatResponse['limitations'];
+};
+
+function parseStoredAssistantText(text: string): ParsedAssistantTurn {
+  const sourcesIndex = text.indexOf('\n\nFuentes:');
+  const limitsIndex = text.indexOf('\n\nLímites:');
+
+  if (sourcesIndex === -1 && limitsIndex === -1) {
+    return { answer: text, citations: [], limitations: [] };
+  }
+
+  const answerEnd = [sourcesIndex, limitsIndex].filter((index) => index >= 0).sort((a, b) => a - b)[0] ?? text.length;
+  const answer = text.slice(0, answerEnd).trim();
+  const citations: NonNullable<MapChatResponse['citations']> = [];
+  const limitations: string[] = [];
+
+  if (sourcesIndex >= 0) {
+    const sourcesBlock = text.slice(
+      sourcesIndex + '\n\nFuentes:'.length,
+      limitsIndex >= 0 ? limitsIndex : undefined
+    );
+    for (const line of sourcesBlock.split('\n')) {
+      const trimmed = line.replace(/^-\s*/, '').trim();
+      if (!trimmed) continue;
+      const [labelPart, rest] = trimmed.split(':');
+      const label = labelPart?.trim() || 'Fuente';
+      const locator = rest?.trim() || '';
+      const excerptIndex = locator.indexOf(' — ');
+      if (excerptIndex >= 0) {
+        citations.push({
+          label,
+          locator: locator.slice(0, excerptIndex).trim(),
+          excerpt: locator.slice(excerptIndex + 3).trim(),
+        });
+      } else {
+        citations.push({ label, locator });
+      }
+    }
+  }
+
+  if (limitsIndex >= 0) {
+    const limitsBlock = text.slice(limitsIndex + '\n\nLímites:'.length);
+    for (const line of limitsBlock.split('\n')) {
+      const trimmed = line.replace(/^-\s*/, '').trim();
+      if (trimmed) limitations.push(trimmed);
+    }
+  }
+
+  return { answer, citations, limitations };
+}
+
 function formatAssistantText(reply: MapChatResponse): string {
   const citationText = reply.citations?.length
     ? `\n\nFuentes:\n${reply.citations
@@ -38,6 +92,50 @@ function formatAssistantText(reply: MapChatResponse): string {
     : '';
 
   return `${reply.answer}${citationText}${limitationsText}`.trim();
+}
+
+function AssistantBubble({ text }: { text: string }) {
+  const parsed = parseStoredAssistantText(text);
+
+  return (
+    <View className="self-start max-w-[92%] mb-4 rounded-[20px] px-4 py-3 bg-neutral-100 dark:bg-white/5">
+      <Text className="text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">{parsed.answer}</Text>
+      {parsed.citations?.length ? (
+        <View className="mt-3 pt-3 border-t border-neutral-200/80 dark:border-white/10">
+          <Text className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-2">
+            Fuentes
+          </Text>
+          {parsed.citations.map((citation, index) => (
+            <View
+              key={`${citation.label}-${citation.locator}-${index}`}
+              className="mb-2 rounded-[20px] border border-neutral-200 dark:border-white/10 px-3 py-2"
+            >
+              <Text className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                {citation.label}: {citation.locator}
+              </Text>
+              {citation.excerpt ? (
+                <Text className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                  {citation.excerpt}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {parsed.limitations?.length ? (
+        <View className="mt-3 pt-3 border-t border-neutral-200/80 dark:border-white/10">
+          <Text className="text-[11px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-2">
+            Límites
+          </Text>
+          {parsed.limitations.map((item, index) => (
+            <Text key={`${item}-${index}`} className="text-xs leading-relaxed text-neutral-600 dark:text-neutral-400 mb-1">
+              • {item}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapChatSheetProps) {
@@ -183,30 +281,22 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
                 concreto.
               </Text>
             ) : (
-              chatHistory.map((turn, index) => (
-                <View
-                  key={`${turn.role}-${index}`}
-                  className={`mb-4 rounded-2xl px-4 py-3 ${
-                    turn.role === 'user'
-                      ? 'self-end max-w-[85%] bg-indigo-600'
-                      : 'self-start max-w-[92%] bg-neutral-100 dark:bg-white/5'
-                  }`}
-                >
-                  <Text
-                    className={`text-sm leading-relaxed ${
-                      turn.role === 'user'
-                        ? 'text-white'
-                        : 'text-neutral-800 dark:text-neutral-200'
-                    }`}
+              chatHistory.map((turn, index) =>
+                turn.role === 'user' ? (
+                  <View
+                    key={`${turn.role}-${index}`}
+                    className="mb-4 self-end max-w-[85%] rounded-[20px] px-4 py-3 bg-indigo-600"
                   >
-                    {turn.text}
-                  </Text>
-                </View>
-              ))
+                    <Text className="text-sm leading-relaxed text-white">{turn.text}</Text>
+                  </View>
+                ) : (
+                  <AssistantBubble key={`${turn.role}-${index}`} text={turn.text} />
+                )
+              )
             )}
 
             {chatBusy ? (
-              <View className="self-start max-w-[92%] mb-4 rounded-2xl px-4 py-3 bg-neutral-100 dark:bg-white/5 flex-row items-center gap-2">
+              <View className="self-start max-w-[92%] mb-4 rounded-[20px] px-4 py-3 bg-neutral-100 dark:bg-white/5 flex-row items-center gap-2">
                 <ActivityIndicator size="small" color="#4f46e5" />
                 <Text className="text-sm text-neutral-600 dark:text-neutral-300">Pensando…</Text>
               </View>
@@ -223,12 +313,12 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
                 multiline
                 textAlignVertical="top"
                 editable={!chatBusy}
-                className="flex-1 min-h-[72px] max-h-32 rounded-2xl border border-neutral-200 dark:border-white/10 px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100"
+                className="flex-1 min-h-[72px] max-h-32 rounded-[20px] border border-neutral-200 dark:border-white/10 px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100"
               />
               <Pressable
                 onPress={() => void handleSubmit()}
                 disabled={chatBusy || !chatInput.trim()}
-                className={`rounded-2xl px-4 py-3 flex-row items-center gap-2 ${
+                className={`rounded-[20px] px-4 py-3 flex-row items-center gap-2 ${
                   chatBusy || !chatInput.trim()
                     ? 'bg-indigo-600/40'
                     : 'bg-indigo-600 active:bg-indigo-700'

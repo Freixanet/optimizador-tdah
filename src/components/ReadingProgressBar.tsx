@@ -104,7 +104,7 @@ function ReadingProgressBar({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="inline-flex lg:hidden -ml-1 flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all active:scale-95 shrink-0"
+            className="inline-flex lg:hidden ml-1 flex items-center justify-center w-8 h-8 rounded-full bg-neutral-500/10 text-neutral-600 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-neutral-500/20 dark:text-neutral-400 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all duration-200 hover:bg-neutral-500/20 dark:hover:bg-white/10 hover:scale-105 active:scale-95 shrink-0"
             title="Abrir navegación"
             aria-label="Abrir navegación"
           >

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import PDFDocument from "pdfkit";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { fetchTranscript } from "youtube-transcript";
@@ -80,6 +81,16 @@ const DEFAULT_MODEL_CHAIN = [
   "gemini-3.1-flash-lite",
 ];
 
+const DEEP_MODEL_CHAIN: string[] = [
+  ...new Set([
+    ...(process.env.GEMINI_DEEP_MODEL ?? "gemini-3-pro-preview")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean),
+    ...DEFAULT_MODEL_CHAIN,
+  ]),
+];
+
 const MODEL_CHAIN: string[] = (() => {
   const envChain = (process.env.GEMINI_MODEL ?? "")
     .split(",")
@@ -90,9 +101,13 @@ const MODEL_CHAIN: string[] = (() => {
 
 const MODEL = MODEL_CHAIN[0];
 
-const ALLOWED_MODELS = new Set(DEFAULT_MODEL_CHAIN);
+const ALLOWED_MODELS = new Set([...DEFAULT_MODEL_CHAIN, ...DEEP_MODEL_CHAIN]);
 const MAP_CACHE_LIMIT = 120;
 const mapCache = new Map<string, ActionMapData>();
+
+const READING_WORDS_PER_MINUTE = 200;
+const MAX_OUTPUT_TOKENS_STANDARD = 8192;
+const MAX_OUTPUT_TOKENS_DEEP = 32768;
 
 function resolveModelChain(preferred?: string): string[] {
   if (!preferred || preferred === "auto") return MODEL_CHAIN;
@@ -103,6 +118,19 @@ function resolveModelChain(preferred?: string): string[] {
   if (preferred === "gemini-3.5-flash") return MODEL_CHAIN;
   if (ALLOWED_MODELS.has(preferred)) return [preferred];
   return MODEL_CHAIN;
+}
+
+function resolveTransformModelChain(
+  preferred?: string,
+  depth?: TransformRequest["depth"]
+): string[] {
+  const isAuto = !preferred || preferred === "auto";
+  if (isAuto && depth === "profundo") return DEEP_MODEL_CHAIN;
+  return resolveModelChain(preferred);
+}
+
+function maxOutputTokensForDepth(depth?: TransformRequest["depth"]): number {
+  return depth === "profundo" ? MAX_OUTPUT_TOKENS_DEEP : MAX_OUTPUT_TOKENS_STANDARD;
 }
 
 // Generate content, automatically falling back to the next model in the chain
@@ -131,6 +159,343 @@ async function generateWithFallback(
   }
 
   throw lastErr;
+}
+
+async function generateStreamWithFallback(
+  params: Omit<Parameters<typeof ai.models.generateContentStream>[0], "model">,
+  chain: string[] = MODEL_CHAIN
+) {
+  let lastErr: any;
+
+  for (const model of chain) {
+    try {
+      const stream = await ai.models.generateContentStream({ model, ...params });
+      return { stream, model };
+    } catch (err: any) {
+      lastErr = err;
+      const { statusCode } = describeGeminiError(err);
+      if (statusCode === 429 || statusCode === 503) {
+        console.warn(
+          `Modelo "${model}" no disponible para streaming (estado ${statusCode}). Probando el siguiente modelo...`
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastErr;
+}
+
+function cleanJsonText(text: string): string {
+  let cleaned = text.trim();
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*)/i);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].replace(/\s*```\s*$/, "").trim();
+  }
+  const start = cleaned.indexOf("{");
+  return start >= 0 ? cleaned.slice(start) : cleaned;
+}
+
+function extractPartialMap(text: string): unknown | null {
+  const cleaned = cleanJsonText(text);
+  if (!cleaned.startsWith("{")) return null;
+
+  const openBrackets: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let lastCompleteEnd = -1;
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      openBrackets.push(ch === "{" ? "}" : "]");
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      if (openBrackets.length && openBrackets[openBrackets.length - 1] === ch) {
+        openBrackets.pop();
+        if (openBrackets.length === 0) lastCompleteEnd = i;
+      }
+      continue;
+    }
+  }
+
+  let candidate =
+    lastCompleteEnd >= 0 ? cleaned.slice(0, lastCompleteEnd + 1) : cleaned.replace(/,\s*"[^"]*$/, "").replace(/,\s*$/, "");
+
+  if (lastCompleteEnd < 0) {
+    candidate += [...openBrackets].reverse().join("");
+  }
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function isPartialMapRenderable(map: ActionMapData): boolean {
+  const hasTitle = Boolean(map.title?.trim() && map.title !== "Mapa sin título");
+  const hasCore = Boolean(map.coreIdea?.trim());
+  const hasSteps = Boolean(map.steps?.length);
+  return (hasTitle && hasCore) || hasSteps;
+}
+
+function flushResponse(res: express.Response) {
+  if (typeof (res as express.Response & { flush?: () => void }).flush === "function") {
+    (res as express.Response & { flush?: () => void }).flush!();
+  }
+}
+
+function writeStreamEvent(res: express.Response, event: {
+  type: "partial" | "done" | "error";
+  map?: ActionMapData;
+  model?: string;
+  error?: string;
+}) {
+  res.write(`${JSON.stringify(event)}\n`);
+  flushResponse(res);
+}
+
+type TransformContext = {
+  contents: string | Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>;
+  modelChain: string[];
+  resolvedIntent: MapIntent;
+  resolvedDepth: TransformRequest["depth"];
+  resolvedOutputLanguage: string;
+  sourceLabel: string;
+  type: TransformRequest["type"];
+  mapId?: string;
+  maxOutputTokens: number;
+};
+
+async function buildTransformContext(body: TransformRequest): Promise<TransformContext | { error: string; status: number }> {
+  const {
+    text,
+    type,
+    fileData,
+    mimeType,
+    preferredModel,
+    intent,
+    outputLanguage,
+    sourceLabel,
+    mapId,
+    depth,
+  } = body;
+
+  const resolvedIntent: MapIntent =
+    intent === "study" || intent === "apply" ? intent : "understand";
+  const resolvedDepth: TransformRequest["depth"] =
+    depth === "rapido" || depth === "profundo" ? depth : "estandar";
+  const resolvedOutputLanguage =
+    typeof outputLanguage === "string" && outputLanguage.trim() ? outputLanguage.trim() : "es";
+
+  if (base64Size(fileData) > MAX_UPLOAD_BYTES) {
+    return { error: "El archivo supera el tamaño permitido.", status: 413 };
+  }
+
+  if (type === "pdf" || type === "image" || type === "video") {
+    if (!fileData || !mimeType) {
+      return {
+        error:
+          type === "image"
+            ? "No image provided"
+            : type === "video"
+              ? "No video provided"
+              : "No PDF provided",
+        status: 400,
+      };
+    }
+  } else if (!text) {
+    return { error: "No text provided", status: 400 };
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    return { error: "API key is missing on the server.", status: 500 };
+  }
+
+  const transformPrompt = buildTransformPrompt({
+    type,
+    intent: resolvedIntent,
+    outputLanguage: resolvedOutputLanguage,
+    sourceLabel,
+    depth: resolvedDepth,
+  });
+
+  let contents: TransformContext["contents"];
+
+  if (type === "pdf") {
+    contents = [{ inlineData: { data: fileData!, mimeType: mimeType! } }, { text: transformPrompt }];
+  } else if (type === "image") {
+    const userPrompt = typeof text === "string" && text.trim() ? `${text.trim()}\n\n` : "";
+    contents = [
+      { inlineData: { data: fileData!, mimeType: mimeType! } },
+      { text: `${userPrompt}${transformPrompt}` },
+    ];
+  } else if (type === "video") {
+    const userPrompt = typeof text === "string" && text.trim() ? `${text.trim()}\n\n` : "";
+    contents = [
+      { inlineData: { data: fileData!, mimeType: mimeType! } },
+      { text: `${userPrompt}${transformPrompt}` },
+    ];
+  } else {
+    let contentText = text as string;
+    if (type === "youtube") {
+      contentText = await fetchYouTubeTranscript(text);
+    } else if (type === "link") {
+      contentText = await fetchUrlContent(text);
+    }
+    contents = `${transformPrompt}\n\nContenido fuente:\n${contentText}`;
+  }
+
+  const modelChain = resolveTransformModelChain(
+    typeof preferredModel === "string" ? preferredModel : undefined,
+    resolvedDepth
+  );
+
+  return {
+    contents,
+    modelChain,
+    resolvedIntent,
+    resolvedDepth,
+    resolvedOutputLanguage,
+    sourceLabel: sourceLabel || "Fuente analizada",
+    type,
+    mapId,
+    maxOutputTokens: maxOutputTokensForDepth(resolvedDepth),
+  };
+}
+
+function geminiGenerationConfig(maxOutputTokens: number) {
+  return {
+    systemInstruction: SYSTEM_PROMPT,
+    responseMimeType: "application/json",
+    responseSchema: schema as any,
+    temperature: 0.3,
+    topP: 0.9,
+    maxOutputTokens,
+  };
+}
+
+function finalizeMapJson(
+  jsonText: string,
+  context: TransformContext,
+  usedModel: string
+): ActionMapData {
+  let cleaned = jsonText || "{}";
+  const backtickMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (backtickMatch) cleaned = backtickMatch[1];
+
+  const parsedData = JSON.parse(cleaned);
+  const normalized = normalizeMapData(parsedData, {
+    intent: context.resolvedIntent,
+    outputLanguage: context.resolvedOutputLanguage,
+    sourceKind: context.type,
+    sourceLabel: context.sourceLabel,
+  });
+  normalized.modelUsed = usedModel;
+  cacheMap(context.mapId, normalized);
+  return normalized;
+}
+
+async function handleTransformStream(
+  context: TransformContext,
+  res: express.Response
+): Promise<void> {
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let usedModel = context.modelChain[0];
+  let fullText = "";
+  let lastPartialAt = 0;
+  let lastStepCount = 0;
+  let lastSnapshot: ActionMapData | null = null;
+
+  const maybeEmitPartial = () => {
+    const now = Date.now();
+    const partialParsed = extractPartialMap(fullText);
+    if (!partialParsed) return;
+
+    const normalized = normalizeMapData(partialParsed, {
+      intent: context.resolvedIntent,
+      outputLanguage: context.resolvedOutputLanguage,
+      sourceKind: context.type,
+      sourceLabel: context.sourceLabel,
+    });
+
+    if (!isPartialMapRenderable(normalized)) return;
+
+    const stepCount = normalized.steps.length;
+    const shouldEmit =
+      stepCount > lastStepCount || now - lastPartialAt >= 350 || !lastSnapshot;
+
+    if (!shouldEmit) return;
+
+    lastPartialAt = now;
+    lastStepCount = stepCount;
+    lastSnapshot = normalized;
+    writeStreamEvent(res, { type: "partial", map: normalized });
+  };
+
+  let streamStarted = false;
+
+  for (const model of context.modelChain) {
+    try {
+      const { stream, model: activeModel } = await generateStreamWithFallback(
+        {
+          contents: context.contents,
+          config: geminiGenerationConfig(context.maxOutputTokens),
+        },
+        [model]
+      );
+
+      usedModel = activeModel;
+      streamStarted = true;
+
+      for await (const chunk of stream) {
+        const chunkText = chunk.text || "";
+        if (!chunkText) continue;
+        fullText += chunkText;
+        maybeEmitPartial();
+      }
+
+      break;
+    } catch (err: any) {
+      if (streamStarted) throw err;
+      const { statusCode } = describeGeminiError(err);
+      if (statusCode === 429 || statusCode === 503) {
+        console.warn(
+          `Modelo "${model}" no disponible para streaming (estado ${statusCode}). Probando el siguiente modelo...`
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (!streamStarted) {
+    throw new Error("No hay modelos disponibles para generar el mapa.");
+  }
+
+  console.log(`Mapa generado en streaming con el modelo "${usedModel}".`);
+
+  const normalized = finalizeMapJson(fullText, context, usedModel);
+  writeStreamEvent(res, { type: "done", map: normalized, model: usedModel });
+  res.end();
 }
 
 const sourceReferenceSchema = {
@@ -325,7 +690,8 @@ Reglas obligatorias:
 7. La capa "tldr" orienta; no sustituye la lectura completa.
 8. Si falta parte del contenido, señálalo en "coverage" o "sourceMetadata.limitations" con honestidad.
 9. Los bloques callout deben usar un label editorial sobrio: 'Idea clave', 'Matiz', 'Ejemplo', 'Precaución' o 'Para aplicarlo'.
-10. Devuelve solo JSON válido compatible con el esquema pedido.`;
+10. Devuelve solo JSON válido compatible con el esquema pedido.
+11. El tamaño de la lectura lo decide la densidad de información relevante, no la longitud del texto: filtra el ruido y cubre todas las ideas relevantes. La fidelidad y la cobertura completa tienen prioridad sobre la brevedad. No omitas ninguna idea, dato, matiz, condición ni ejemplo relevante; si algo no cabe, declararlo en coverage.limitations.`;
 
 function intentLabel(intent: MapIntent) {
   if (intent === "study") return "Estudiar";
@@ -358,18 +724,45 @@ function normalizeReferences(input: unknown): SourceReference[] {
     .filter(Boolean) as SourceReference[];
 }
 
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function countBlockWords(block: {
+  text?: string;
+  items?: Array<{ strong?: string; span?: string }>;
+}): number {
+  let words = countWords(block.text || "");
+  if (Array.isArray(block.items)) {
+    for (const item of block.items) {
+      if (item?.strong) words += countWords(item.strong);
+      if (item?.span) words += countWords(item.span);
+    }
+  }
+  return words;
+}
+
+function countStepWords(
+  content: Array<{ text?: string; items?: Array<{ strong?: string; span?: string }> }>
+): number {
+  return content.reduce((sum, block) => sum + countBlockWords(block), 0);
+}
+
+function estimateStepMinutes(
+  content: Array<{ text?: string; items?: Array<{ strong?: string; span?: string }> }>
+): string {
+  const words = countStepWords(content);
+  const minutes = Math.max(1, Math.ceil(words / READING_WORDS_PER_MINUTE));
+  return `~${minutes} min`;
+}
+
 function normalizeMapData(
   parsed: any,
   fallback: { intent: MapIntent; outputLanguage: string; sourceKind: string; sourceLabel: string }
 ): ActionMapData {
   const normalizedSteps = Array.isArray(parsed?.steps)
-    ? parsed.steps.map((step: any, index: number) => ({
-        id: String(step?.id || `step-${index + 1}`),
-        shortNav: String(step?.shortNav || step?.title || `Paso ${index + 1}`),
-        title: String(step?.title || `Paso ${index + 1}`),
-        time: String(step?.time || "~3 min"),
-        purpose: step?.purpose ? String(step.purpose) : undefined,
-        content: Array.isArray(step?.content)
+    ? parsed.steps.map((step: any, index: number) => {
+        const content = Array.isArray(step?.content)
           ? step.content.map((block: any) => ({
               type: String(block?.type || "prose"),
               text: String(block?.text || "").trim(),
@@ -389,9 +782,18 @@ function normalizeMapData(
                 : undefined,
               references: normalizeReferences(block?.references),
             }))
-          : [],
-        references: normalizeReferences(step?.references),
-      }))
+          : [];
+
+        return {
+          id: String(step?.id || `step-${index + 1}`),
+          shortNav: String(step?.shortNav || step?.title || `Paso ${index + 1}`),
+          title: String(step?.title || `Paso ${index + 1}`),
+          time: estimateStepMinutes(content),
+          purpose: step?.purpose ? String(step.purpose) : undefined,
+          content,
+          references: normalizeReferences(step?.references),
+        };
+      })
     : [];
 
   const normalized: ActionMapData = {
@@ -492,11 +894,13 @@ function buildTransformPrompt({
   intent,
   outputLanguage,
   sourceLabel,
+  depth = 'estandar',
 }: {
   type: TransformRequest["type"];
   intent: MapIntent;
   outputLanguage: string;
   sourceLabel?: string;
+  depth?: TransformRequest["depth"];
 }) {
   const formatGuide =
     type === "youtube"
@@ -511,6 +915,20 @@ function buildTransformPrompt({
               ? "Si es una página web, conserva tesis, encabezados, evidencias, tablas y citas relevantes."
               : "Si es texto o archivo textual, detecta estructura, bloques temáticos y relaciones entre ideas.";
 
+  const resolvedDepth = depth === 'rapido' || depth === 'profundo' ? depth : 'estandar';
+  const depthGuide =
+    resolvedDepth === 'rapido'
+      ? 'Agrupa más las unidades: menos pasos, pero sin perder ninguna idea esencial.'
+      : resolvedDepth === 'profundo'
+        ? [
+            'MODO PROFUNDO — prioridad máxima de cobertura y desarrollo.',
+            'NO colapses una fuente larga (libro, PDF extenso, transcripción larga) en pocos pasos: el número de pasos debe ser proporcional a las unidades relevantes del material.',
+            'Cada paso debe corresponder a una unidad, sección, argumento o procedimiento distinto con desarrollo sustancial (varios bloques prose/callout/list por paso).',
+            'Para libros y documentos extensos se esperan muchos pasos (decenas si el material lo justifica), no un resumen ejecutivo de 3-6 pasos.',
+            'Granularidad fina: no comprimas ni fusiones unidades que el lector necesitaría separar para estudiar o aplicar.',
+          ].join(' ')
+        : 'Granularidad equilibrada: una unidad principal por paso.';
+
   return [
     `Objetivo del lector: ${intentLabel(intent)} (${intent}).`,
     `Idioma de salida: ${outputLanguage}.`,
@@ -523,7 +941,11 @@ function buildTransformPrompt({
     "La coreIdea debe ser una frase corta y memorable; evita párrafos, matices largos o dos ideas en una.",
     "En 'tldr' entrega de 3 a 6 puntos.",
     "En 'knowledgeSections' resume las secciones mayores.",
-    "En 'steps' organiza el recorrido completo de lectura.",
+    "PRIMERO filtra el ruido: ignora relleno, repeticiones, divagaciones, saludos, autopromoción, patrocinios, navegación web y texto boilerplate. El ruido NO genera pasos.",
+    "Identifica las UNIDADES de información relevante (ideas, tesis, argumentos, conceptos, procedimientos, secciones distintas). El número de pasos y de knowledgeSections debe ser proporcional al número de unidades relevantes, NO a la longitud del texto. Una fuente larga pero ruidosa puede tener pocos pasos; una fuente corta y densa puede tener bastantes.",
+    "Agrupa unidades afines en un paso de tamaño digerible (una idea principal bien desarrollada por paso). Evita pasos sobrecargados con muchas ideas distintas y evita pasos triviales de relleno.",
+    "NO omitas ninguna unidad relevante. Si por límite de espacio no cabe todo lo relevante, regístralo explícitamente en coverage.limitations; nunca lo descartes en silencio.",
+    depthGuide,
     "Usa 'completionCard' para una ficha final recordable y descargable.",
   ]
     .filter(Boolean)
@@ -719,125 +1141,69 @@ function describeGeminiError(err: any): { statusCode: number; errorMessage: stri
   };
 }
 
-function wrapPdfText(text: string, maxChars = 88) {
-  const words = text.replace(/\s+/g, " ").trim().split(" ");
-  const lines: string[] = [];
-  let current = "";
+function buildCheatsheetModel(map: ActionMapData) {
+  return {
+    title: map.title,
+    intent: intentLabel(map.intent ?? "understand"),
+    sourceLabel: map.sourceMetadata?.label,
+    coreIdea: map.coreIdea,
+    takeaways: map.completionCard?.takeaways?.length
+      ? map.completionCard.takeaways
+      : map.tldr.slice(0, 5).map((item) => `${item.title}: ${item.desc}`),
+    reviewGuide: map.completionCard?.summary || map.coreSupport,
+    references: (map.references ?? []).slice(0, 6).map((ref) => ({
+      label: ref.label,
+      locator: ref.locator,
+    })),
+  };
+}
 
-  for (const word of words) {
-    if (!word) continue;
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxChars) {
-      current = candidate;
-      continue;
+async function renderCheatsheetPdf(model: ReturnType<typeof buildCheatsheetModel>): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: [612, 792], margin: 56 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk) => chunks.push(chunk as Buffer));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const accent = "#4F46E5";
+    const textColor = "#1A1A1A";
+
+    doc.fillColor(accent).font("Helvetica-Bold").fontSize(9).text("Nucleo");
+    doc.moveDown(0.8);
+    doc.fillColor(textColor).font("Helvetica-Bold").fontSize(22).text(model.title, { width: 500 });
+    doc.moveDown(0.5);
+    doc.fillColor(accent).font("Helvetica").fontSize(10).text(
+      `Modo: ${model.intent}${model.sourceLabel ? `  ·  Fuente: ${model.sourceLabel}` : ""}`,
+      { width: 500 }
+    );
+    doc.moveDown(1.2);
+    doc.fillColor("#737373").font("Helvetica-Bold").fontSize(8).text("IDEA CENTRAL", { characterSpacing: 1.2 });
+    doc.moveDown(0.4);
+    doc.fillColor(textColor).font("Helvetica-Bold").fontSize(14).text(model.coreIdea, { width: 500 });
+    doc.moveDown(1);
+    doc.fillColor("#737373").font("Helvetica-Bold").fontSize(8).text("PARA RECORDAR", { characterSpacing: 1.2 });
+    doc.moveDown(0.4);
+    doc.fillColor(textColor).font("Helvetica").fontSize(11);
+    for (const item of model.takeaways.slice(0, 7)) {
+      doc.text(`• ${item}`, { width: 500, indent: 8, paragraphGap: 4 });
     }
-    if (current) lines.push(current);
-    current = word;
-  }
+    doc.moveDown(0.8);
+    doc.fillColor("#737373").font("Helvetica-Bold").fontSize(8).text("GUÍA DE REPASO", { characterSpacing: 1.2 });
+    doc.moveDown(0.4);
+    doc.fillColor(textColor).font("Helvetica").fontSize(11).text(model.reviewGuide, { width: 500 });
+    if (model.references.length) {
+      doc.moveDown(0.8);
+      doc.fillColor("#737373").font("Helvetica-Bold").fontSize(8).text("REFERENCIAS", { characterSpacing: 1.2 });
+      doc.moveDown(0.4);
+      doc.fillColor(textColor).font("Helvetica").fontSize(10);
+      for (const ref of model.references) {
+        doc.text(`• ${ref.label}: ${ref.locator}`, { width: 500, indent: 8, paragraphGap: 3 });
+      }
+    }
 
-  if (current) lines.push(current);
-  return lines;
-}
-
-function escapePdfText(text: string) {
-  return text
-    .normalize("NFC")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)")
-    .replace(/[^\x20-\xFF]/g, "?");
-}
-
-function buildCheatsheetLines(map: ActionMapData) {
-  const lines = [
-    map.title,
-    "",
-    `Modo: ${intentLabel(map.intent ?? "understand")}`,
-    map.sourceMetadata?.label ? `Fuente: ${map.sourceMetadata.label}` : "",
-    "",
-    "Idea central",
-    map.coreIdea,
-    "",
-    "Resumen util",
-    ...(map.completionCard?.takeaways?.length
-      ? map.completionCard.takeaways.flatMap((item) => [`- ${item}`])
-      : map.tldr.slice(0, 5).flatMap((item) => [`- ${item.title}: ${item.desc}`])),
-    "",
-    "Guia de repaso",
-    map.completionCard?.summary || map.coreSupport,
-    map.completionCard?.promptQuestion ? "" : "",
-    map.completionCard?.promptQuestion ? "Pregunta para volver a pensar" : "",
-    map.completionCard?.promptQuestion || "",
-    "",
-    "Referencias",
-    ...(map.references?.length
-      ? map.references.slice(0, 6).flatMap((ref) => [
-          `- ${ref.label}: ${ref.locator}${ref.excerpt ? ` — ${ref.excerpt}` : ""}`,
-        ])
-      : ["- El mapa no incluye referencias más específicas."]),
-  ].filter(Boolean);
-
-  return lines.flatMap((line) => (line ? wrapPdfText(line, 86) : [""]));
-}
-
-function createSimplePdfBuffer(lines: string[]) {
-  const linesPerPage = 46;
-  const pages = [];
-  for (let i = 0; i < lines.length; i += linesPerPage) {
-    pages.push(lines.slice(i, i + linesPerPage));
-  }
-
-  const objects: string[] = [];
-  const pageObjectIds: number[] = [];
-  const contentObjectIds: number[] = [];
-
-  objects.push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-  objects.push("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
-  objects.push("3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
-  objects.push("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n");
-
-  let nextId = 5;
-  for (const pageLines of pages) {
-    const pageObjectId = nextId++;
-    const contentObjectId = nextId++;
-    pageObjectIds.push(pageObjectId);
-    contentObjectIds.push(contentObjectId);
-
-    const textLines = pageLines
-      .map((line, index) => {
-        const font = index === 0 ? "/F2 18 Tf" : "/F1 11 Tf";
-        const y = index === 0 ? 760 : 738 - (index - 1) * 15;
-        return `${font} 1 0 0 1 56 ${y} Tm (${escapePdfText(line)}) Tj`;
-      })
-      .join("\n");
-
-    const stream = `BT\n${textLines}\nET`;
-    objects.push(
-      `${pageObjectId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>\nendobj\n`
-    );
-    objects.push(
-      `${contentObjectId} 0 obj\n<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream\nendobj\n`
-    );
-  }
-
-  const kids = pageObjectIds.map((id) => `${id} 0 R`).join(" ");
-  objects[1] = `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pageObjectIds.length} >>\nendobj\n`;
-
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const object of objects) {
-    offsets.push(Buffer.byteLength(pdf, "latin1"));
-    pdf += object;
-  }
-
-  const xrefOffset = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i < offsets.length; i += 1) {
-    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  return Buffer.from(pdf, "latin1");
+    doc.end();
+  });
 }
 
 async function startServer() {
@@ -872,131 +1238,58 @@ async function startServer() {
         return res.status(429).json({ error: "Demasiadas solicitudes. Inténtalo de nuevo en unos minutos." });
       }
       await authenticateOptional(req);
-      const {
-        text,
-        type,
-        fileData,
-        mimeType,
-        preferredModel,
-        intent,
-        outputLanguage,
-        sourceLabel,
-        mapId,
-      } = req.body as TransformRequest;
-      const resolvedIntent: MapIntent =
-        intent === "study" || intent === "apply" ? intent : "understand";
-      const resolvedOutputLanguage =
-        typeof outputLanguage === "string" && outputLanguage.trim() ? outputLanguage.trim() : "es";
 
-      if (base64Size(fileData) > MAX_UPLOAD_BYTES) {
-        return res.status(413).json({ error: "El archivo supera el tamaño permitido." });
+      const contextResult = await buildTransformContext(req.body as TransformRequest);
+      if ("error" in contextResult) {
+        return res.status(contextResult.status).json({ error: contextResult.error });
       }
-
-      if (type === "pdf" || type === "image" || type === "video") {
-        if (!fileData || !mimeType) {
-          return res
-            .status(400)
-            .json({
-              error:
-                type === "image"
-                  ? "No image provided"
-                  : type === "video"
-                    ? "No video provided"
-                    : "No PDF provided",
-            });
-        }
-      } else if (!text) {
-        return res.status(400).json({ error: "No text provided" });
-      }
-
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ error: "API key is missing on the server." });
-      }
-
-      let contents: string | Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>;
-
-      const transformPrompt = buildTransformPrompt({
-        type,
-        intent: resolvedIntent,
-        outputLanguage: resolvedOutputLanguage,
-        sourceLabel,
-      });
-
-      if (type === "pdf") {
-        contents = [
-          { inlineData: { data: fileData, mimeType } },
-          {
-            text: transformPrompt,
-          },
-        ];
-      } else if (type === "image") {
-        const userPrompt = typeof text === "string" && text.trim() ? `${text.trim()}\n\n` : "";
-        contents = [
-          { inlineData: { data: fileData, mimeType } },
-          {
-            text: `${userPrompt}${transformPrompt}`,
-          },
-        ];
-      } else if (type === "video") {
-        const userPrompt = typeof text === "string" && text.trim() ? `${text.trim()}\n\n` : "";
-        contents = [
-          { inlineData: { data: fileData, mimeType } },
-          {
-            text: `${userPrompt}${transformPrompt}`,
-          },
-        ];
-      } else {
-        let contentText = text as string;
-        if (type === "youtube") {
-          contentText = await fetchYouTubeTranscript(text);
-        } else if (type === "link") {
-          contentText = await fetchUrlContent(text);
-        }
-        contents = `${transformPrompt}\n\nContenido fuente:\n${contentText}`;
-      }
-
-      const modelChain = resolveModelChain(
-        typeof preferredModel === "string" ? preferredModel : undefined
-      );
 
       const { response, model: usedModel } = await generateWithFallback(
         {
-          contents,
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-            responseMimeType: "application/json",
-            responseSchema: schema as any,
-            temperature: 0.3,
-            topP: 0.9,
-          },
+          contents: contextResult.contents,
+          config: geminiGenerationConfig(contextResult.maxOutputTokens),
         },
-        modelChain
+        contextResult.modelChain
       );
 
       res.setHeader("X-Gemini-Model-Used", usedModel);
       console.log(`Mapa generado con el modelo "${usedModel}".`);
 
-      let jsonText = response.text || "{}";
-
-      const backtickMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (backtickMatch) {
-        jsonText = backtickMatch[1];
-      }
-
-      const parsedData = JSON.parse(jsonText);
-      const normalized = normalizeMapData(parsedData, {
-        intent: resolvedIntent,
-        outputLanguage: resolvedOutputLanguage,
-        sourceKind: type,
-        sourceLabel: sourceLabel || "Fuente analizada",
-      });
-      normalized.modelUsed = usedModel;
-      cacheMap(mapId, normalized);
+      const normalized = finalizeMapJson(response.text || "{}", contextResult, usedModel);
       res.json(normalized);
     } catch (err: any) {
       console.error(err);
 
       const { statusCode, errorMessage } = describeGeminiError(err);
+      res.status(statusCode).json({ error: errorMessage });
+    }
+  });
+
+  app.post("/api/transform/stream", async (req: AuthenticatedRequest, res) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      if (!isWithinRateLimit(ip)) {
+        return res.status(429).json({ error: "Demasiadas solicitudes. Inténtalo de nuevo en unos minutos." });
+      }
+      await authenticateOptional(req);
+
+      const contextResult = await buildTransformContext(req.body as TransformRequest);
+      if ("error" in contextResult) {
+        return res.status(contextResult.status).json({ error: contextResult.error });
+      }
+
+      await handleTransformStream(contextResult, res);
+    } catch (err: any) {
+      console.error(err);
+      const { errorMessage } = describeGeminiError(err);
+
+      if (res.headersSent) {
+        writeStreamEvent(res, { type: "error", error: errorMessage });
+        res.end();
+        return;
+      }
+
+      const { statusCode } = describeGeminiError(err);
       res.status(statusCode).json({ error: errorMessage });
     }
   });
@@ -1066,10 +1359,14 @@ async function startServer() {
     if (!map) {
       return res.status(404).json({ error: "La ficha ya no está disponible en el servidor." });
     }
-    const pdf = createSimplePdfBuffer(buildCheatsheetLines(map));
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${req.params.id}.pdf"`);
-    res.send(pdf);
+    void renderCheatsheetPdf(buildCheatsheetModel(map)).then((pdf) => {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${req.params.id}.pdf"`);
+      res.send(pdf);
+    }).catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: "No se pudo generar la ficha PDF." });
+    });
   });
 
   app.post("/api/maps/:id/cheatsheet.pdf", (req, res) => {
@@ -1078,10 +1375,14 @@ async function startServer() {
     if (!map) {
       return res.status(404).json({ error: "La ficha ya no está disponible en el servidor." });
     }
-    const pdf = createSimplePdfBuffer(buildCheatsheetLines(map));
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${req.params.id}.pdf"`);
-    res.send(pdf);
+    void renderCheatsheetPdf(buildCheatsheetModel(map)).then((pdf) => {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${req.params.id}.pdf"`);
+      res.send(pdf);
+    }).catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: "No se pudo generar la ficha PDF." });
+    });
   });
 
   if (process.env.NODE_ENV !== "production") {

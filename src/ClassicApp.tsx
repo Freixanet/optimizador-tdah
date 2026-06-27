@@ -27,6 +27,7 @@ import {
   Paperclip,
 } from 'lucide-react';
 import { apiUrl } from './apiBase';
+import type { ActionMapData } from './contracts';
 import HistoryPanel from './components/HistoryPanel';
 import AppIcon from './components/AppIcon';
 import NucleoIcon from './components/NucleoIcon';
@@ -64,6 +65,10 @@ import {
   type HistoryEntry,
 } from './history';
 import { detectUrlInput, friendlyTransformError, type UrlInputDetection } from './urlInput';
+import {
+  fetchTransformWithProgress,
+  TRANSFORM_IDLE_TIMEOUT_MESSAGE,
+} from '@shared/transformStream';
 import {
   deleteCloudHistoryEntry,
   migrateLocalHistory,
@@ -156,9 +161,6 @@ async function processImageFile(
   }
 }
 const PAGE_BOTTOM_PAD_PX = 24;
-const TRANSFORM_TIMEOUT_MS = 150_000;
-const TRANSFORM_TIMEOUT_MESSAGE =
-  'La generación está tardando demasiado. Comprueba tu conexión e inténtalo de nuevo.';
 
 function throwIfAborted(signal?: AbortSignal | null): void {
   if (signal?.aborted) {
@@ -277,6 +279,7 @@ export default function ClassicApp() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [recentImages, setRecentImages] = useState<string[]>(loadRecentImages);
   const [isIndexExpanded, setIsIndexExpanded] = useState(true);
+  const [isStreamGenerating, setIsStreamGenerating] = useState(false);
   const [showStepFooter, setShowStepFooter] = useState(false);
   const reduceMotion = useReducedMotion();
 
@@ -287,6 +290,11 @@ export default function ClassicApp() {
   const [nativeComposerReservedHeight, setNativeComposerReservedHeight] = useState(184);
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledByUserRef = useRef(false);
+  const handleTransformRef = useRef<(textOverride?: string) => Promise<void>>(async () => {});
+  const inputTextRef = useRef(inputText);
+  const uploadedFileRef = useRef(uploadedFile);
+  inputTextRef.current = inputText;
+  uploadedFileRef.current = uploadedFile;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -339,16 +347,23 @@ export default function ClassicApp() {
     setNativeComposerReservedHeight(metrics.visible ? Math.max(120, metrics.height + 24) : PAGE_BOTTOM_PAD_PX);
   }, []);
 
+  const triggerNativeSend = useCallback((text?: string) => {
+    if (text) {
+      inputTextRef.current = text;
+      setInputText(text);
+    }
+    queueMicrotask(() => {
+      void handleTransformRef.current(text);
+    });
+  }, []);
+
   const { isNativeIOS, clearText, setLayout: setNativeComposerLayout } = useNativeComposer({
     appState,
-    onChange: setInputText,
-    onSend: (text) => {
+    onChange: (text) => {
+      inputTextRef.current = text;
       setInputText(text);
-      setTimeout(() => {
-        const btn = document.getElementById('hidden-submit-btn');
-        if (btn) btn.click();
-      }, 0);
     },
+    onSend: triggerNativeSend,
     onAttach: () => fileInputRef.current?.click(),
     onMenu: () => setProfileMenuOpen(true),
     onMetricsChange: handleNativeComposerMetrics,
@@ -1029,12 +1044,15 @@ export default function ClassicApp() {
     setAppState('input');
   };
 
-  const handleTransform = async () => {
-    if (!inputText.trim() && !uploadedFile) return;
+  const handleTransform = async (textOverride?: string) => {
+    const activeText = textOverride ?? inputTextRef.current;
+    const trimmedText = activeText.trim();
+    const currentFile = uploadedFileRef.current;
+    if (!trimmedText && !currentFile) return;
 
     let urlDetection: UrlInputDetection | null = null;
-    if (!uploadedFile && inputText.trim()) {
-      urlDetection = detectUrlInput(inputText);
+    if (!currentFile && trimmedText) {
+      urlDetection = detectUrlInput(activeText);
       if (urlDetection.kind === 'invalid') {
         setError(urlDetection.message);
         return;
@@ -1047,30 +1065,27 @@ export default function ClassicApp() {
     transformCancelledByUserRef.current = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const timeoutId = window.setTimeout(() => {
-      controller.abort();
-    }, TRANSFORM_TIMEOUT_MS);
 
     try {
       let body: Record<string, string>;
-      if (uploadedFile?.isPdf && uploadedFile.fileData) {
+      if (currentFile?.isPdf && currentFile.fileData) {
         body = {
           type: 'pdf',
-          fileData: uploadedFile.fileData,
-          mimeType: uploadedFile.mimeType || 'application/pdf',
+          fileData: currentFile.fileData,
+          mimeType: currentFile.mimeType || 'application/pdf',
           preferredModel: modelPreference,
         };
-      } else if (uploadedFile?.isImage && uploadedFile.fileData) {
+      } else if (currentFile?.isImage && currentFile.fileData) {
         body = {
           type: 'image',
-          fileData: uploadedFile.fileData,
-          mimeType: uploadedFile.mimeType || 'image/jpeg',
+          fileData: currentFile.fileData,
+          mimeType: currentFile.mimeType || 'image/jpeg',
           preferredModel: modelPreference,
         };
-        if (inputText.trim()) body.text = inputText.trim();
-      } else if (uploadedFile && inputText.trim()) {
+        if (trimmedText) body.text = trimmedText;
+      } else if (currentFile && trimmedText) {
         body = {
-          text: inputText,
+          text: activeText,
           type: 'text',
           preferredModel: modelPreference,
         };
@@ -1089,7 +1104,7 @@ export default function ClassicApp() {
           };
         } else {
           body = {
-            text: cleanTranscript(inputText),
+            text: cleanTranscript(activeText),
             type: 'text',
             preferredModel: modelPreference,
           };
@@ -1099,49 +1114,71 @@ export default function ClassicApp() {
       const accessToken = supabase
         ? (await supabase.auth.getSession()).data.session?.access_token
         : undefined;
-      const response = (await fetchWithRetry(apiUrl('/api/transform'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })) as Response;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
 
-      const parsedData = await response.json();
-      if (parsedData.error) throw new Error(parsedData.error);
+      let hasShownPartial = false;
+      setIsStreamGenerating(true);
 
-      const session = {
-        data: parsedData,
-        currentStep: 0,
-        isComplete: false,
-        viewAll: false,
+      const saveCompletedMap = (parsedData: ActionMapData) => {
+        const session = {
+          data: parsedData,
+          currentStep: 0,
+          isComplete: false,
+          viewAll: false,
+        };
+        const sourceType = resolveSourceType(activeText, currentFile);
+
+        setHistoryStore((prev) => {
+          const updated = createEntry(prev, session, sourceType);
+          if (!saveHistory(updated)) {
+            setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
+          }
+          return updated;
+        });
+
+        setData(parsedData);
+        setAppState('result');
+        setCurrentStep(0);
+        setIsComplete(false);
+        setViewAll(false);
+        setIsIndexExpanded(true);
+        setIsMapOpen(isDesktop);
       };
-      const sourceType = resolveSourceType(inputText, uploadedFile);
 
-      setHistoryStore((prev) => {
-        const updated = createEntry(prev, session, sourceType);
-        if (!saveHistory(updated)) {
-          setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
-        }
-        return updated;
+      await fetchTransformWithProgress({
+        streamUrl: apiUrl('/api/transform/stream'),
+        fallbackUrl: apiUrl('/api/transform'),
+        body,
+        headers,
+        signal: controller.signal,
+        handlers: {
+          onPartial: (partialMap) => {
+            if (!hasShownPartial) {
+              hasShownPartial = true;
+              setAppState('result');
+              setCurrentStep(0);
+              setIsComplete(false);
+              setViewAll(false);
+              setIsIndexExpanded(true);
+              setIsMapOpen(isDesktop);
+            }
+            setData(partialMap);
+          },
+          onDone: (finalMap) => {
+            saveCompletedMap(finalMap);
+          },
+          onError: (message) => {
+            throw new Error(message);
+          },
+        },
       });
-
-      setData(parsedData);
-      setAppState('result');
-      setCurrentStep(0);
-      setIsComplete(false);
-      setViewAll(false);
-      setIsIndexExpanded(true);
-      setIsMapOpen(isDesktop);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         if (transformCancelledByUserRef.current) {
           setAppState('input');
           return;
         }
-        setError(TRANSFORM_TIMEOUT_MESSAGE);
+        setError(TRANSFORM_IDLE_TIMEOUT_MESSAGE);
         setAppState('input');
         return;
       }
@@ -1157,10 +1194,14 @@ export default function ClassicApp() {
       setError(friendlyMessage);
       setAppState('input');
     } finally {
-      window.clearTimeout(timeoutId);
+      setIsStreamGenerating(false);
       abortControllerRef.current = null;
     }
   };
+
+  React.useLayoutEffect(() => {
+    handleTransformRef.current = handleTransform;
+  });
 
   const handleNewMap = () => {
     setHistoryStore((prev) => {
@@ -1701,8 +1742,8 @@ export default function ClassicApp() {
     </div>
   );
 
-  const renderSidebarBrand = () => (
-    <div className="flex items-center justify-between gap-2 mb-10">
+  const renderSidebarBrand = (mobile = false) => (
+    <div className={`flex items-center justify-between gap-2${mobile ? '' : ' mb-10'}`}>
       <button
         type="button"
         onClick={handleNewMap}
@@ -1729,7 +1770,7 @@ export default function ClassicApp() {
 
   const renderSidebar = () => (
     <aside
-      className={`fixed left-0 inset-y-0 z-10 shrink-0 bg-neutral-50 dark:bg-app-canvas border-r-0 lg:border-r lg:border-neutral-200 lg:dark:border-white/5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] w-[var(--mobile-sidebar-width)] select-none [webkit-user-select:none] [webkit-touch-callout:none] lg:pt-0 lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 lg:w-auto ${
+      className={`fixed left-0 inset-y-0 z-10 shrink-0 bg-neutral-50 dark:bg-app-canvas border-r-0 lg:border-r lg:border-neutral-200 lg:dark:border-white/5 pb-[env(safe-area-inset-bottom)] w-[var(--mobile-sidebar-width)] select-none [webkit-user-select:none] [webkit-touch-callout:none] lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 lg:w-auto ${
         showSidebarExpanded
           ? `flex flex-col overflow-hidden lg:w-72${!isDesktop && !isMapOpen ? ' pointer-events-none' : ''}`
           : 'pointer-events-none lg:pointer-events-auto lg:overflow-visible lg:w-14'
@@ -1737,8 +1778,93 @@ export default function ClassicApp() {
       aria-hidden={!showSidebarExpanded && !isDesktop}
     >
       {showSidebarExpanded ? (
-      <div className="flex flex-col h-full min-h-0 w-full lg:w-72">
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-6 lg:pt-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]">
+      <div className="sidebar-shell relative flex flex-col h-full min-h-0 w-full lg:w-72 isolate overflow-hidden">
+        <div className="mobile-sidebar relative flex-1 min-h-0 w-full lg:hidden">
+          <div className="sidebar-scroll overscroll-y-contain touch-pan-y select-none [webkit-user-select:none] [webkit-touch-callout:none]">
+            <div className="sidebar-list px-6">
+              {appState === 'result' && data && (
+                <div className="mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsIndexExpanded((prev) => !prev)}
+                    className="w-full flex items-center gap-2 mb-4 text-left rounded-lg -mx-2 px-2 py-1 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+                    aria-expanded={isIndexExpanded}
+                  >
+                    <ChevronDown
+                      className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${isIndexExpanded ? '' : '-rotate-90'}`}
+                    />
+                    <span className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-400">
+                      Índice
+                    </span>
+                  </button>
+
+                  {isIndexExpanded && (
+                    <>
+                  <nav className="flex flex-col gap-1">
+                    <button
+                      onClick={() => handleStepClick(0)}
+                      className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${currentStep === 0 && !isComplete ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                    >
+                      <span>Resumen</span>
+                    </button>
+
+                    <div className="w-px h-6 bg-neutral-200 dark:bg-white/5 ml-8 my-1" />
+
+                    {data?.steps?.map((step: any, idx: number) => {
+                      const stepNum = idx + 1;
+                      const isActive = currentStep === stepNum && !isComplete;
+                      const isPast = currentStep > stepNum || isComplete;
+                      return (
+                        <button
+                          key={step.id}
+                          onClick={() => handleStepClick(stepNum)}
+                          className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                        >
+                          <span className="flex items-center gap-3 min-w-0 lg:flex-1 lg:pr-6">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 dark:bg-white/10 flex items-center justify-center text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                              {stepNum}
+                            </span>
+                            <span className="truncate">{step.shortNav}</span>
+                          </span>
+                          <CheckCircle2
+                            className={`w-4 h-4 shrink-0 ${
+                              isPast ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-600'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </nav>
+
+                  {!isComplete && renderViewModeToggle('mt-4')}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {storageError && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{storageError}</p>
+              )}
+              {syncError && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{syncError}</p>
+              )}
+
+              <HistoryPanel
+                entries={historyStore.entries}
+                activeId={historyStore.activeId}
+                disabled={appState === 'loading'}
+                showTopDivider={appState === 'result' && Boolean(data)}
+                onSelect={handleSelectHistory}
+                onDelete={handleDeleteHistory}
+                onTogglePin={handleTogglePinHistory}
+                onRename={handleRenameHistory}
+              />
+            </div>
+          </div>
+          <header className="sidebar-header px-6">{renderSidebarBrand(true)}</header>
+        </div>
+
+        <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]">
           {renderSidebarBrand()}
 
           {appState === 'result' && data && (
@@ -2098,6 +2224,11 @@ export default function ClassicApp() {
       <h1 className="text-xs sm:text-sm font-bold text-neutral-400 dark:text-neutral-400 uppercase tracking-widest min-w-0 leading-snug text-pretty">
         {data?.title}
       </h1>
+      {isStreamGenerating && (
+        <p className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 animate-pulse">
+          Generando mapa…
+        </p>
+      )}
       {showReadingTime && totalMinutes !== null && (
         <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
           <Clock className="w-4 h-4" aria-hidden="true" />
@@ -2140,7 +2271,7 @@ export default function ClassicApp() {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="absolute left-4 top-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all active:scale-95 shrink-0"
+          className="absolute left-6 top-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-neutral-500/10 text-neutral-600 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-neutral-500/20 dark:text-neutral-400 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all active:scale-95 shrink-0"
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >

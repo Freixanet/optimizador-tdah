@@ -226,6 +226,7 @@ import WebKit
     var containerBottomConstraint: NSLayoutConstraint!
     var isVisible = false
     var isLoading = false
+    var hasAttachment = false
     var keyboardVisible = false
     let keyboardGap: CGFloat = 7
 
@@ -339,10 +340,9 @@ import WebKit
         sendButton.layer.cornerRadius = 16 // 32x32
         sendButton.layer.cornerCurve = .continuous
         sendButton.addAction(UIAction { [weak self] _ in
-            guard let self = self,
-                  !self.isLoading,
-                  let text = self.textView.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !text.isEmpty else { return }
+            guard let self = self, !self.isLoading else { return }
+            let text = self.textView.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !text.isEmpty || self.hasAttachment else { return }
             self.sendEvent("onComposerSend", detail: text)
             self.textView.text = ""
             self.textViewDidChange(self.textView)
@@ -535,7 +535,7 @@ import WebKit
     private func setAttachment(_ body: [String: Any]) {
         let rawName = body["name"] as? String
         let name = rawName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasAttachment = !(name?.isEmpty ?? true)
+        hasAttachment = !(name?.isEmpty ?? true)
 
         attachmentLabel.isHidden = !hasAttachment
         attachmentLabel.text = hasAttachment ? "  \(body["isImage"] as? Bool == true ? "Imagen" : "Archivo"): \(name ?? "")  " : nil
@@ -544,6 +544,7 @@ import WebKit
         UIView.animate(withDuration: 0.12) {
             self.containerView.layoutIfNeeded()
         } completion: { _ in
+            self.updateSendButtonState()
             self.sendMetrics()
         }
     }
@@ -586,7 +587,8 @@ import WebKit
 
     private func updateSendButtonState() {
         let hasText = !(textView.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        sendButton.isEnabled = hasText && !isLoading
+        let canSend = (hasText || hasAttachment) && !isLoading
+        sendButton.isEnabled = canSend
 
         // Match the web CSS:
         // empty: bg-neutral-500/10 text-neutral-400 (dark: bg-neutral-500/20 text-neutral-500)
@@ -595,7 +597,7 @@ import WebKit
         let traitCollection = containerView.traitCollection
         let isDark = traitCollection.userInterfaceStyle == .dark
 
-        if hasText && !isLoading {
+        if canSend {
             sendButton.backgroundColor = isDark ? UIColor(red: 99/255.0, green: 102/255.0, blue: 241/255.0, alpha: 1) : UIColor(red: 79/255.0, green: 70/255.0, blue: 229/255.0, alpha: 1)
             sendButton.tintColor = .white
             sendButton.alpha = 1.0

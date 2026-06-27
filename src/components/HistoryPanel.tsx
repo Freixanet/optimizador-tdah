@@ -448,7 +448,7 @@ export default function HistoryPanel({
           {recentEntries.length > 0 && (
             <div>
               {pinnedEntries.length > 0 && (
-                <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-1">
+                <div className="flex items-center gap-2 px-2 py-1.5 mb-1 mt-8">
                   <span className="text-xs font-bold tracking-wide text-neutral-500 dark:text-neutral-400">
                     Recientes
                   </span>

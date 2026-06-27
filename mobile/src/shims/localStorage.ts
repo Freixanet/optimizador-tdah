@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { configureStorage } from '@shared/storage';
 
 class LocalStorageShim {
   private cache: Record<string, string> = {};
@@ -65,6 +66,7 @@ declare global {
 
 export async function bootstrapStorage(): Promise<void> {
   await localStorageShim.init();
+  configureStorage(localStorageShim);
   globalThis.localStorage = localStorageShim as unknown as Storage;
 
   if (!localStorageShim.getItem('nucleo-app-variant')) {

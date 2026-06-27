@@ -1,11 +1,25 @@
+import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import type { HistoryEntry, HistoryStore } from './history';
 import { supabase } from './supabase';
 
-function authRedirectUrl() {
-  // Expo genera automáticamente la URL de redirección adecuada tanto para desarrollo (exp://...) como para prod
-  return Linking.createURL('login-callback');
+WebBrowser.maybeCompleteAuthSession();
+
+/** URL estable registrada en Supabase (evita exp:// que redirige al sitio web). */
+export function getAuthRedirectUrl(): string {
+  const override = process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL?.trim();
+  if (override) return override;
+
+  const configuredScheme = Constants.expoConfig?.scheme;
+  const scheme =
+    typeof configuredScheme === 'string'
+      ? configuredScheme
+      : Array.isArray(configuredScheme) && typeof configuredScheme[0] === 'string'
+        ? configuredScheme[0]
+        : 'nucleo';
+
+  return `${scheme}://login-callback`;
 }
 
 type CloudMap = {
@@ -48,14 +62,14 @@ function fromCloudMap(map: CloudMap): HistoryEntry {
 
 export async function signInWith(provider: 'google' | 'apple') {
   if (!supabase) throw new Error('La sincronización todavía no está configurada.');
+  const redirectTo = getAuthRedirectUrl();
   return supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: authRedirectUrl(), skipBrowserRedirect: true },
+    options: { redirectTo, skipBrowserRedirect: true },
   });
 }
 
 function paramFromUrl(url: string, key: string): string | undefined {
-  // Los proveedores OAuth devuelven los parámetros en la query (?code=) o en el fragmento (#access_token=)
   const parsed = Linking.parse(url);
   const fromQuery = parsed.queryParams?.[key];
   if (typeof fromQuery === 'string') return fromQuery;
@@ -68,36 +82,23 @@ function paramFromUrl(url: string, key: string): string | undefined {
   return undefined;
 }
 
-/**
- * Flujo OAuth completo para móvil: abre el navegador de autenticación del sistema,
- * recoge la redirección hacia la app y canjea el código/token por una sesión persistida.
- */
-export async function signInWithProvider(provider: 'google' | 'apple') {
-  if (!supabase) throw new Error('La sincronización todavía no está configurada.');
+async function establishSessionFromRedirectUrl(url: string): Promise<boolean> {
+  if (!supabase) return false;
 
-  const redirectTo = authRedirectUrl();
-  const { data, error } = await signInWith(provider);
-  if (error) throw error;
-  if (!data?.url) throw new Error('No se pudo iniciar el acceso con el proveedor.');
-
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-  if (result.type !== 'success' || !result.url) {
-    // El usuario cerró el navegador o canceló: no es un error que mostrar
-    return false;
+  const errorDescription = paramFromUrl(url, 'error_description');
+  if (errorDescription) {
+    throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
   }
 
-  const errorDescription = paramFromUrl(result.url, 'error_description');
-  if (errorDescription) throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
-
-  const code = paramFromUrl(result.url, 'code');
+  const code = paramFromUrl(url, 'code');
   if (code) {
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
     if (exchangeError) throw exchangeError;
     return true;
   }
 
-  const accessToken = paramFromUrl(result.url, 'access_token');
-  const refreshToken = paramFromUrl(result.url, 'refresh_token');
+  const accessToken = paramFromUrl(url, 'access_token');
+  const refreshToken = paramFromUrl(url, 'refresh_token');
   if (accessToken && refreshToken) {
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: accessToken,
@@ -107,7 +108,42 @@ export async function signInWithProvider(provider: 'google' | 'apple') {
     return true;
   }
 
-  throw new Error('No se recibió una sesión válida del proveedor.');
+  return false;
+}
+
+/** Completa OAuth cuando la app se abre vía deep link (login-callback). */
+export async function completeOAuthRedirect(url: string): Promise<boolean> {
+  if (!url.includes('login-callback')) return false;
+  const established = await establishSessionFromRedirectUrl(url);
+  if (!established) {
+    throw new Error('No se recibió una sesión válida del proveedor.');
+  }
+  return true;
+}
+
+/**
+ * Flujo OAuth completo para móvil: abre el navegador de autenticación del sistema,
+ * recoge la redirección hacia la app y canjea el código/token por una sesión persistida.
+ */
+export async function signInWithProvider(provider: 'google' | 'apple') {
+  if (!supabase) throw new Error('La sincronización todavía no está configurada.');
+
+  const redirectTo = getAuthRedirectUrl();
+
+  const { data, error } = await signInWith(provider);
+  if (error) throw error;
+  if (!data?.url) throw new Error('No se pudo iniciar el acceso con el proveedor.');
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type !== 'success' || !result.url) {
+    return false;
+  }
+
+  const established = await establishSessionFromRedirectUrl(result.url);
+  if (!established) {
+    throw new Error('No se recibió una sesión válida del proveedor.');
+  }
+  return true;
 }
 
 export async function signInWithPassword(email: string, password: string) {

@@ -12,7 +12,7 @@ coverage/
 chrome-profile/
 
 # Native build artifacts
-android-native/.gradle/
+**/.gradle/
 android-native/build/
 android-native/app/build/
 android-native/local.properties

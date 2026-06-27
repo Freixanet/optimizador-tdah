@@ -31,6 +31,9 @@ import {
   BookOpen,
   GraduationCap,
   ListChecks,
+  Sparkles,
+  ChevronLeft,
+  Cpu,
   CircleAlert,
 } from 'lucide-react';
 import { apiUrl } from './apiBase';
@@ -61,6 +64,12 @@ import {
   type ModelPreference,
 } from './modelPreference';
 import {
+  DEPTH_OPTIONS,
+  getInitialDepthPreference,
+  saveDepthPreference,
+  type DepthPreference,
+} from './depthPreference';
+import {
   APP_VARIANT_OPTIONS,
   getAppVariant,
   switchAppVariant,
@@ -80,6 +89,11 @@ import {
   type HistoryEntry,
 } from './history';
 import { detectUrlInput, friendlyTransformError, type UrlInputDetection } from './urlInput';
+import {
+  fetchTransformWithProgress,
+  TRANSFORM_IDLE_TIMEOUT_MESSAGE,
+} from '@shared/transformStream';
+import { normalizeMapData } from '@shared/mapData';
 import {
   deleteCloudHistoryEntry,
   migrateLocalHistory,
@@ -203,9 +217,6 @@ async function processImageFile(
   }
 }
 const PAGE_BOTTOM_PAD_PX = 24;
-const TRANSFORM_TIMEOUT_MS = 150_000;
-const TRANSFORM_TIMEOUT_MESSAGE =
-  'La generación está tardando demasiado. Comprueba tu conexión e inténtalo de nuevo.';
 
 function throwIfAborted(signal?: AbortSignal | null): void {
   if (signal?.aborted) {
@@ -232,148 +243,6 @@ function getIntentLabel(intent: MapIntent | undefined) {
 
 function getResolvedOutputLanguage() {
   return 'es';
-}
-
-function normalizeReferences(input: unknown): SourceReference[] {
-  if (!Array.isArray(input)) return [];
-  return input
-    .map((ref) => {
-      const value = ref as SourceReference;
-      if (!value?.label || !value?.locator) return null;
-      return {
-        label: String(value.label),
-        locator: String(value.locator),
-        locatorKind: value.locatorKind,
-        excerpt: value.excerpt ? String(value.excerpt) : undefined,
-        note: value.note ? String(value.note) : undefined,
-      } satisfies SourceReference;
-    })
-    .filter(Boolean) as SourceReference[];
-}
-
-function normalizeMapData(input: any): ActionMapData | null {
-  if (!input?.title || !Array.isArray(input?.steps) || !Array.isArray(input?.tldr)) return null;
-
-  const normalizedSteps = input.steps.map((step: any, index: number) => ({
-    id: String(step?.id || `step-${index + 1}`),
-    shortNav: String(step?.shortNav || step?.title || `Paso ${index + 1}`),
-    title: String(step?.title || `Paso ${index + 1}`),
-    time: String(step?.time || '~3 min'),
-    purpose: step?.purpose ? String(step.purpose) : undefined,
-    content: Array.isArray(step?.content)
-      ? step.content
-          .map((block: any) => ({
-            type: String(block?.type || 'prose') as 'prose' | 'callout' | 'list',
-            text: String(block?.text || '').trim(),
-            kind: block?.kind ? String(block.kind) : undefined,
-            label: block?.label
-              ? (String(block.label) as CalloutLabel)
-              : DEFAULT_CALLOUT_LABELS[String(block?.kind || 'info')] || 'Idea clave',
-            items: Array.isArray(block?.items)
-              ? block.items
-                  .map((item: any) =>
-                    item?.strong
-                      ? {
-                          strong: String(item.strong),
-                          span: item?.span ? String(item.span) : undefined,
-                        }
-                      : null
-                  )
-                  .filter(Boolean)
-              : undefined,
-            references: normalizeReferences(block?.references),
-          }))
-          .filter((block) => block.text || block.items?.length)
-      : [],
-    references: normalizeReferences(step?.references),
-  }));
-
-  const normalized = {
-    title: String(input.title),
-    category: input?.category ? String(input.category) : undefined,
-    intent: input?.intent === 'study' || input?.intent === 'apply' ? input.intent : 'understand',
-    outputLanguage: input?.outputLanguage ? String(input.outputLanguage) : 'es',
-    mapVersion: Number.isFinite(input?.mapVersion) ? Number(input.mapVersion) : 2,
-    sourceMetadata: {
-      kind: input?.sourceMetadata?.kind || 'text',
-      label: input?.sourceMetadata?.label || 'Fuente analizada',
-      title: input?.sourceMetadata?.title ? String(input.sourceMetadata.title) : undefined,
-      author: input?.sourceMetadata?.author ? String(input.sourceMetadata.author) : undefined,
-      language: input?.sourceMetadata?.language ? String(input.sourceMetadata.language) : undefined,
-      detected: Array.isArray(input?.sourceMetadata?.detected)
-        ? input.sourceMetadata.detected.map((item: unknown) => String(item))
-        : [],
-      limitations: Array.isArray(input?.sourceMetadata?.limitations)
-        ? input.sourceMetadata.limitations.map((item: unknown) => String(item))
-        : [],
-    },
-    coverage: {
-      summary: input?.coverage?.summary
-        ? String(input.coverage.summary)
-        : 'Lectura generada a partir del material disponible.',
-      notes: Array.isArray(input?.coverage?.notes)
-        ? input.coverage.notes
-            .map((note: any) =>
-              note?.label && note?.detail
-                ? {
-                    label: String(note.label),
-                    detail: String(note.detail),
-                    tone: note?.tone === 'warning' ? 'warning' : 'neutral',
-                  }
-                : null
-            )
-            .filter(Boolean)
-        : [],
-    },
-    coreIdea: String(input?.coreIdea || ''),
-    coreSupport: String(input?.coreSupport || ''),
-    tldr: input.tldr
-      .map((item: any) =>
-        item?.title && item?.desc
-          ? { title: String(item.title), desc: String(item.desc) }
-          : null
-      )
-      .filter(Boolean),
-    knowledgeSections: Array.isArray(input?.knowledgeSections)
-      ? input.knowledgeSections
-          .map((section: any) =>
-            section?.title && section?.summary
-              ? {
-                  title: String(section.title),
-                  summary: String(section.summary),
-                  references: normalizeReferences(section.references),
-                }
-              : null
-          )
-          .filter(Boolean)
-      : [],
-    steps: normalizedSteps,
-    references: normalizeReferences(input?.references),
-    completionCard: {
-      title: input?.completionCard?.title ? String(input.completionCard.title) : 'Mapa completado',
-      summary: input?.completionCard?.summary
-        ? String(input.completionCard.summary)
-        : 'Vuelve aquí para repasar lo esencial sin tener que releerlo todo.',
-      takeaways: Array.isArray(input?.completionCard?.takeaways)
-        ? input.completionCard.takeaways.map((item: unknown) => String(item)).filter(Boolean)
-        : [],
-      promptQuestion: input?.completionCard?.promptQuestion
-        ? String(input.completionCard.promptQuestion)
-        : undefined,
-    },
-    modelUsed: input?.modelUsed ? String(input.modelUsed) : undefined,
-  };
-
-  if (!normalized.sourceMetadata.detected.length) {
-    normalized.sourceMetadata.detected = [normalized.sourceMetadata.label];
-  }
-  if (!normalized.completionCard.takeaways.length) {
-    normalized.completionCard.takeaways = normalized.tldr
-      .slice(0, 5)
-      .map((item) => `${item.title}: ${item.desc}`);
-  }
-
-  return normalized;
 }
 
 function resolveSourceType(text: string, uploadedFile: UploadedFile | null): SourceType {
@@ -478,6 +347,7 @@ export default function ComprensionApp() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [modelPreference, setModelPreference] = useState<ModelPreference>(getInitialModelPreference);
   const [intent, setIntent] = useState<MapIntent>(initialActiveData?.intent ?? 'understand');
+  const [depthPreference, setDepthPreference] = useState<DepthPreference>(getInitialDepthPreference);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [cloudUser, setCloudUser] = useState<CloudUserProfile | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -494,7 +364,12 @@ export default function ComprensionApp() {
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [essentialsReview, setEssentialsReview] = useState(false);
+  const [profileMenuView, setProfileMenuView] = useState<'root' | 'settings'>('root');
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelPickerLeft, setModelPickerLeft] = useState(56);
   const [showStepFooter, setShowStepFooter] = useState(false);
+  const [isStreamGenerating, setIsStreamGenerating] = useState(false);
   const reduceMotion = useReducedMotion();
 
   const contentRef = useRef<HTMLElement>(null);
@@ -504,11 +379,17 @@ export default function ComprensionApp() {
   const [nativeComposerReservedHeight, setNativeComposerReservedHeight] = useState(184);
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledByUserRef = useRef(false);
+  const handleTransformRef = useRef<(textOverride?: string) => Promise<void>>(async () => {});
+  const inputTextRef = useRef(inputText);
+  const uploadedFileRef = useRef(uploadedFile);
+  inputTextRef.current = inputText;
+  uploadedFileRef.current = uploadedFile;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const scrollSpyLockRef = useRef(false);
   const sidebarTouchStartRef = useRef<{ x: number; y: number; dragging: boolean; opening: boolean } | null>(null);
@@ -556,17 +437,23 @@ export default function ComprensionApp() {
     setNativeComposerReservedHeight(metrics.visible ? Math.max(120, metrics.height + 24) : PAGE_BOTTOM_PAD_PX);
   }, []);
 
+  const triggerNativeSend = useCallback((text?: string) => {
+    if (text) {
+      inputTextRef.current = text;
+      setInputText(text);
+    }
+    queueMicrotask(() => {
+      void handleTransformRef.current(text);
+    });
+  }, []);
+
   const { isNativeIOS, clearText, setLayout: setNativeComposerLayout } = useNativeComposer({
     appState,
-    onChange: setInputText,
-    onSend: (text) => {
+    onChange: (text) => {
+      inputTextRef.current = text;
       setInputText(text);
-      // Wait a tick for state to update, then transform
-      setTimeout(() => {
-        const btn = document.getElementById('hidden-submit-btn');
-        if (btn) btn.click();
-      }, 0);
     },
+    onSend: triggerNativeSend,
     onAttach: () => fileInputRef.current?.click(),
     onMenu: () => setProfileMenuOpen(true),
     onMetricsChange: handleNativeComposerMetrics,
@@ -623,8 +510,7 @@ export default function ComprensionApp() {
     return `${readerModeLabel} · Paso ${currentStep} de ${totalSteps}`;
   }, [currentStep, data, totalSteps, isComplete, readerModeLabel]);
 
-  const shouldShowStepFooter =
-    showStepFooter || (!isDesktop && currentStep === 0 && !viewAll && !isComplete);
+  const shouldShowStepFooter = !viewAll && !isComplete;
 
   React.useEffect(() => {
     historyStoreRef.current = historyStore;
@@ -692,16 +578,25 @@ export default function ComprensionApp() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [profileMenuOpen]);
 
+  React.useLayoutEffect(() => {
+    if (!modelPickerOpen || !modelPickerRef.current || !attachMenuRef.current) return;
+    const anchor = modelPickerRef.current.getBoundingClientRect();
+    const group = attachMenuRef.current.getBoundingClientRect();
+    setModelPickerLeft(Math.max(8, anchor.left - group.left));
+  }, [modelPickerOpen]);
+
   React.useEffect(() => {
-    if (!attachMenuOpen) return;
+    if (!attachMenuOpen && !modelPickerOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
-      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (attachMenuRef.current && !attachMenuRef.current.contains(target)) {
         setAttachMenuOpen(false);
+        setModelPickerOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [attachMenuOpen]);
+  }, [attachMenuOpen, modelPickerOpen]);
 
   React.useEffect(() => {
     if (appState !== 'result') return;
@@ -961,7 +856,7 @@ export default function ComprensionApp() {
     }
 
     if (isSidebarUnderlayVisible) {
-      style.borderRadius = '48px';
+      style.borderRadius = '28px';
       style.boxShadow =
         theme === 'dark'
           ? '0 16px 48px rgba(0,0,0,0.55)'
@@ -1267,12 +1162,15 @@ export default function ComprensionApp() {
     setAppState('input');
   };
 
-  const handleTransform = async () => {
-    if (!inputText.trim() && !uploadedFile) return;
+  const handleTransform = async (textOverride?: string) => {
+    const activeText = textOverride ?? inputTextRef.current;
+    const trimmedText = activeText.trim();
+    const currentFile = uploadedFileRef.current;
+    if (!trimmedText && !currentFile) return;
 
     let urlDetection: UrlInputDetection | null = null;
-    if (!uploadedFile && inputText.trim()) {
-      urlDetection = detectUrlInput(inputText);
+    if (!currentFile && trimmedText) {
+      urlDetection = detectUrlInput(activeText);
       if (urlDetection.kind === 'invalid') {
         setError(urlDetection.message);
         return;
@@ -1285,56 +1183,57 @@ export default function ComprensionApp() {
     transformCancelledByUserRef.current = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const timeoutId = window.setTimeout(() => {
-      controller.abort();
-    }, TRANSFORM_TIMEOUT_MS);
 
     try {
       const mapId = generateMapId();
       const sourceLabel =
-        uploadedFile?.name || inputText.trim().split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
+        currentFile?.name || trimmedText.split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
       let body: TransformRequest;
-      if (uploadedFile?.isPdf && uploadedFile.fileData) {
+      if (currentFile?.isPdf && currentFile.fileData) {
         body = {
           type: 'pdf',
-          fileData: uploadedFile.fileData,
-          mimeType: uploadedFile.mimeType || 'application/pdf',
+          fileData: currentFile.fileData,
+          mimeType: currentFile.mimeType || 'application/pdf',
           preferredModel: modelPreference,
           intent,
+          depth: depthPreference,
           outputLanguage: resolvedOutputLanguage,
           sourceLabel,
           mapId,
         };
-      } else if (uploadedFile?.isVideo && uploadedFile.fileData) {
+      } else if (currentFile?.isVideo && currentFile.fileData) {
         body = {
           type: 'video',
-          fileData: uploadedFile.fileData,
-          mimeType: uploadedFile.mimeType || 'video/mp4',
+          fileData: currentFile.fileData,
+          mimeType: currentFile.mimeType || 'video/mp4',
           preferredModel: modelPreference,
           intent,
+          depth: depthPreference,
           outputLanguage: resolvedOutputLanguage,
           sourceLabel,
           mapId,
         };
-        if (inputText.trim()) body.text = inputText.trim();
-      } else if (uploadedFile?.isImage && uploadedFile.fileData) {
+        if (trimmedText) body.text = trimmedText;
+      } else if (currentFile?.isImage && currentFile.fileData) {
         body = {
           type: 'image',
-          fileData: uploadedFile.fileData,
-          mimeType: uploadedFile.mimeType || 'image/jpeg',
+          fileData: currentFile.fileData,
+          mimeType: currentFile.mimeType || 'image/jpeg',
           preferredModel: modelPreference,
           intent,
+          depth: depthPreference,
           outputLanguage: resolvedOutputLanguage,
           sourceLabel,
           mapId,
         };
-        if (inputText.trim()) body.text = inputText.trim();
-      } else if (uploadedFile && inputText.trim()) {
+        if (trimmedText) body.text = trimmedText;
+      } else if (currentFile && trimmedText) {
         body = {
-          text: inputText,
+          text: activeText,
           type: 'text',
           preferredModel: modelPreference,
           intent,
+          depth: depthPreference,
           outputLanguage: resolvedOutputLanguage,
           sourceLabel,
           mapId,
@@ -1346,6 +1245,7 @@ export default function ComprensionApp() {
             type: 'youtube',
             preferredModel: modelPreference,
             intent,
+            depth: depthPreference,
             outputLanguage: resolvedOutputLanguage,
             sourceLabel: urlDetection.url,
             mapId,
@@ -1356,16 +1256,18 @@ export default function ComprensionApp() {
             type: 'link',
             preferredModel: modelPreference,
             intent,
+            depth: depthPreference,
             outputLanguage: resolvedOutputLanguage,
             sourceLabel: urlDetection.url,
             mapId,
           };
         } else {
           body = {
-            text: cleanTranscript(inputText),
+            text: cleanTranscript(activeText),
             type: 'text',
             preferredModel: modelPreference,
             intent,
+            depth: depthPreference,
             outputLanguage: resolvedOutputLanguage,
             sourceLabel,
             mapId,
@@ -1376,56 +1278,81 @@ export default function ComprensionApp() {
       const accessToken = supabase
         ? (await supabase.auth.getSession()).data.session?.access_token
         : undefined;
-      const response = (await fetchWithRetry(apiUrl('/api/transform'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })) as Response;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
 
-      const parsed = await response.json();
-      if (parsed.error) throw new Error(parsed.error);
-      const parsedData = normalizeMapData(parsed);
-      if (!parsedData) throw new Error('No se pudo interpretar el mapa generado.');
+      let hasShownPartial = false;
+      setIsStreamGenerating(true);
 
-      const session: SavedSession = {
-        data: parsedData,
-        currentStep: 0,
-        isComplete: false,
-        viewAll: false,
+      const saveCompletedMap = (parsedData: ActionMapData) => {
+        const session: SavedSession = {
+          data: parsedData,
+          currentStep: 0,
+          isComplete: false,
+          viewAll: false,
+        };
+        const sourceType = resolveSourceType(activeText, currentFile);
+
+        setHistoryStore((prev) => {
+          const updated = createEntry(prev, session, sourceType, mapId);
+          if (!saveHistory(updated)) {
+            setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
+          }
+          return updated;
+        });
+
+        setData(parsedData);
+        setIntent(parsedData.intent ?? intent);
+        setChatHistory([]);
+        setChatInput('');
+        setChatError(null);
+        setChatOpen(false);
+        setAppState('result');
+        setCurrentStep(0);
+        setIsComplete(false);
+        setViewAll(false);
+        setIsIndexExpanded(true);
+        setIsMapOpen(isDesktop);
       };
-      const sourceType = resolveSourceType(inputText, uploadedFile);
 
-      setHistoryStore((prev) => {
-        const updated = createEntry(prev, session, sourceType, mapId);
-        if (!saveHistory(updated)) {
-          setStorageError('No se pudo guardar el historial. Espacio de almacenamiento lleno.');
-        }
-        return updated;
+      await fetchTransformWithProgress({
+        streamUrl: apiUrl('/api/transform/stream'),
+        fallbackUrl: apiUrl('/api/transform'),
+        body,
+        headers,
+        signal: controller.signal,
+        handlers: {
+          onPartial: (partialMap) => {
+            if (!hasShownPartial) {
+              hasShownPartial = true;
+              setAppState('result');
+              setCurrentStep(0);
+              setIsComplete(false);
+              setViewAll(false);
+              setIsIndexExpanded(true);
+              setIsMapOpen(isDesktop);
+              setChatHistory([]);
+              setChatInput('');
+              setChatError(null);
+              setChatOpen(false);
+            }
+            setData(partialMap);
+            setIntent(partialMap.intent ?? intent);
+          },
+          onDone: (finalMap) => {
+            saveCompletedMap(finalMap);
+          },
+          onError: (message) => {
+            throw new Error(message);
+          },
+        },
       });
-
-      setData(parsedData);
-      setIntent(parsedData.intent ?? intent);
-      setChatHistory([]);
-      setChatInput('');
-      setChatError(null);
-      setChatOpen(false);
-      setAppState('result');
-      setCurrentStep(0);
-      setIsComplete(false);
-      setViewAll(false);
-      setIsIndexExpanded(true);
-      setIsMapOpen(isDesktop);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         if (transformCancelledByUserRef.current) {
           setAppState('input');
           return;
         }
-        setError(TRANSFORM_TIMEOUT_MESSAGE);
+        setError(TRANSFORM_IDLE_TIMEOUT_MESSAGE);
         setAppState('input');
         return;
       }
@@ -1441,10 +1368,14 @@ export default function ComprensionApp() {
       setError(friendlyMessage);
       setAppState('input');
     } finally {
-      window.clearTimeout(timeoutId);
+      setIsStreamGenerating(false);
       abortControllerRef.current = null;
     }
   };
+
+  React.useLayoutEffect(() => {
+    handleTransformRef.current = handleTransform;
+  });
 
   const handleNewMap = () => {
     setHistoryStore((prev) => {
@@ -1820,48 +1751,20 @@ export default function ComprensionApp() {
     const positionClass =
       align === 'up' ? 'bottom-full left-0 mb-2' : 'left-full bottom-0 ml-2';
 
-    return (
-      <div
-        className={`absolute z-[60] w-72 rounded-xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden ${positionClass}`}
-        role="menu"
-      >
-        <div className="px-3 py-2.5 border-b border-neutral-200 dark:border-white/10">
-          <p className="text-[10px] font-bold tracking-widest uppercase text-neutral-400">Modelo</p>
-        </div>
-        <div className="py-1 max-h-52 overflow-y-auto">
-          {MODEL_OPTIONS.map((option) => {
-            const isActive = modelPreference === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={isActive}
-                disabled={appState === 'loading'}
-                onClick={() => {
-                  setModelPreference(option.id);
-                  saveModelPreference(option.id);
-                }}
-                className={`w-full text-left px-3 py-2.5 flex items-start gap-2 transition-colors disabled:opacity-50 ${
-                  isActive
-                    ? 'bg-indigo-50 dark:bg-indigo-500/10'
-                    : 'hover:bg-neutral-50 dark:hover:bg-white/5'
-                }`}
-              >
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                    {option.label}
-                  </span>
-                  <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                    {option.hint}
-                  </span>
-                </span>
-                {isActive && <Check className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />}
-              </button>
-            );
-          })}
-        </div>
-        <div className="border-t border-neutral-200 dark:border-white/10">
+    const glassMenuClass =
+      'absolute z-[60] w-72 rounded-[20px] overflow-hidden bg-white/80 dark:bg-neutral-900/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_12px_40px_rgba(0,0,0,0.18),inset_0_1px_1px_rgba(255,255,255,0.6)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.08)]';
+
+    if (profileMenuView === 'settings') {
+      return (
+        <div className={`${glassMenuClass} ${positionClass}`} role="menu">
+          <button
+            type="button"
+            onClick={() => setProfileMenuView('root')}
+            className="w-full flex items-center gap-2 px-3 py-3 text-sm font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50/80 dark:hover:bg-white/5 transition-colors border-b border-neutral-200/60 dark:border-white/10"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Ajustes
+          </button>
           <div className="px-3 py-2.5">
             <p className="text-[10px] font-bold tracking-widest uppercase text-neutral-400">Experiencia</p>
           </div>
@@ -1878,6 +1781,7 @@ export default function ComprensionApp() {
                   onClick={() => {
                     if (isActive) return;
                     setProfileMenuOpen(false);
+                    setProfileMenuView('root');
                     switchAppVariant(option.id);
                   }}
                   className={`w-full text-left px-3 py-2.5 flex items-start gap-2 transition-colors disabled:opacity-50 ${
@@ -1899,126 +1803,121 @@ export default function ComprensionApp() {
               );
             })}
           </div>
+          <div className="border-t border-neutral-200/60 dark:border-white/10 py-1">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => toggleTheme()}
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+            >
+              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
+            </button>
+          </div>
         </div>
-        <div className="border-t border-neutral-200 dark:border-white/10 py-1">
-          {isCloudSyncConfigured && !cloudUser && (
-            <>
-              <p className="px-3 pt-2 text-[10px] font-bold tracking-widest uppercase text-neutral-400">Sincronización</p>
-              <div className="px-3 py-2 space-y-2">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void signInWith('google')}
-                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-2.5 text-sm font-semibold text-neutral-800 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
-                >
-                  Continuar con Google
-                </button>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 text-center leading-snug">
-                  Un clic. La sesión queda guardada en este navegador.
-                </p>
-              </div>
-              <form
-                className="px-3 py-2 space-y-2 border-t border-neutral-200 dark:border-white/10"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setAuthError(null);
-                  setAuthBusy(true);
-                  const action = authIsSignUp
-                    ? signUpWithPassword(authEmail, authPassword)
-                    : signInWithPassword(authEmail, authPassword);
-                  void action
-                    .then(() => {
-                      setAuthPassword('');
-                      setProfileMenuOpen(false);
-                    })
-                    .catch((err) => setAuthError(authErrorMessage(err)))
-                    .finally(() => setAuthBusy(false));
-                }}
+      );
+    }
+
+    return (
+      <div className={`${glassMenuClass} ${positionClass}`} role="menu">
+        {isCloudSyncConfigured && !cloudUser && (
+          <>
+            <p className="px-3 pt-3 text-[10px] font-bold tracking-widest uppercase text-neutral-400">Sincronización</p>
+            <div className="px-3 py-2 space-y-2">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void signInWith('google')}
+                className="w-full rounded-lg border border-neutral-200/60 dark:border-white/10 bg-white/60 dark:bg-neutral-900/60 px-3 py-2.5 text-sm font-semibold text-neutral-800 dark:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
               >
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">O con email y contraseña</p>
-                <input
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="tu@email.com"
-                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-2.5 py-2 text-sm"
-                />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete={authIsSignUp ? 'new-password' : 'current-password'}
-                  value={authPassword}
-                  onChange={(event) => setAuthPassword(event.target.value)}
-                  placeholder="Contraseña (mín. 6)"
-                  className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-2.5 py-2 text-sm"
-                />
-                <button
-                  type="submit"
-                  disabled={authBusy}
-                  className="w-full rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-2.5 py-2 text-sm font-medium disabled:opacity-50"
-                >
-                  {authBusy ? 'Entrando…' : authIsSignUp ? 'Crear cuenta' : 'Entrar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthIsSignUp((value) => !value);
-                    setAuthError(null);
-                  }}
-                  className="w-full text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
-                >
-                  {authIsSignUp ? '¿Ya tienes cuenta? Entrar' : '¿Primera vez? Crear cuenta'}
-                </button>
-                {authError && <p className="text-xs text-red-500">{authError}</p>}
-              </form>
-            </>
-          )}
-          {cloudUser && (
-            <div className="px-3 py-2">
-              <p className="text-[10px] font-bold tracking-widest uppercase text-emerald-600 dark:text-emerald-400">
-                Cuenta conectada
-              </p>
-              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300 truncate">
-                {cloudUser.email ?? 'tu cuenta'}
-              </p>
-              <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
-                Tu historial se sincroniza entre dispositivos.
+                Continuar con Google
+              </button>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 text-center leading-snug">
+                Un clic. La sesión queda guardada en este navegador.
               </p>
             </div>
-          )}
+            <form
+              className="px-3 py-2 space-y-2 border-t border-neutral-200/60 dark:border-white/10"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setAuthError(null);
+                setAuthBusy(true);
+                const action = authIsSignUp
+                  ? signUpWithPassword(authEmail, authPassword)
+                  : signInWithPassword(authEmail, authPassword);
+                void action
+                  .then(() => {
+                    setAuthPassword('');
+                    setProfileMenuOpen(false);
+                    setProfileMenuView('root');
+                  })
+                  .catch((err) => setAuthError(authErrorMessage(err)))
+                  .finally(() => setAuthBusy(false));
+              }}
+            >
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">O con email y contraseña</p>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="tu@email.com"
+                className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white/80 dark:bg-neutral-900/80 px-2.5 py-2 text-sm"
+              />
+              <input
+                type="password"
+                required
+                minLength={6}
+                autoComplete={authIsSignUp ? 'new-password' : 'current-password'}
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="Contraseña (mín. 6)"
+                className="w-full rounded-lg border border-neutral-200 dark:border-white/10 bg-white/80 dark:bg-neutral-900/80 px-2.5 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={authBusy}
+                className="w-full rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-2.5 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                {authBusy ? 'Entrando…' : authIsSignUp ? 'Crear cuenta' : 'Entrar'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthIsSignUp((value) => !value);
+                  setAuthError(null);
+                }}
+                className="w-full text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                {authIsSignUp ? '¿Ya tienes cuenta? Entrar' : '¿Primera vez? Crear cuenta'}
+              </button>
+              {authError && <p className="text-xs text-red-500">{authError}</p>}
+            </form>
+          </>
+        )}
+        <div className="py-1 border-t border-neutral-200/60 dark:border-white/10">
           <button
             type="button"
             role="menuitem"
-            onClick={() => {
-              toggleTheme();
-              setProfileMenuOpen(false);
-            }}
+            onClick={() => setProfileMenuView('settings')}
             className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled
-            className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-400 cursor-not-allowed"
           >
             <Settings className="w-4 h-4" />
-            Ajustes
+            <span className="flex-1">Ajustes</span>
+            <ChevronRight className="w-4 h-4 text-neutral-400" />
           </button>
-          {cloudUser && <button
-            type="button"
-            role="menuitem"
-            onClick={() => void signOut()}
-            className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Cerrar sesión
-          </button>}
+          {cloudUser && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void signOut()}
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Cerrar sesión
+            </button>
+          )}
         </div>
       </div>
     );
@@ -2032,7 +1931,12 @@ export default function ComprensionApp() {
     <div className="relative" ref={profileMenuRef}>
       <button
         type="button"
-        onClick={() => setProfileMenuOpen((open) => !open)}
+        onClick={() => {
+          setProfileMenuOpen((open) => {
+            if (open) setProfileMenuView('root');
+            return !open;
+          });
+        }}
         className={`rounded-xl transition-colors hover:bg-neutral-200/50 dark:hover:bg-white/5 ${
           variant === 'compact' ? 'p-1' : 'p-1'
         }`}
@@ -2084,8 +1988,8 @@ export default function ComprensionApp() {
     </div>
   );
 
-  const renderSidebarBrand = () => (
-    <div className="flex items-center justify-between gap-2 mb-10">
+  const renderSidebarBrand = (mobile = false) => (
+    <div className={`flex items-center justify-between gap-2${mobile ? '' : ' mb-10'}`}>
       <button
         type="button"
         onClick={handleNewMap}
@@ -2112,7 +2016,7 @@ export default function ComprensionApp() {
 
   const renderSidebar = () => (
     <aside
-      className={`fixed left-0 inset-y-0 z-10 shrink-0 bg-neutral-50 dark:bg-app-canvas border-r-0 lg:border-r lg:border-neutral-200 lg:dark:border-white/5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] w-[var(--mobile-sidebar-width)] select-none [webkit-user-select:none] [webkit-touch-callout:none] lg:pt-0 lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 lg:w-auto ${
+      className={`fixed left-0 inset-y-0 z-10 shrink-0 bg-neutral-50 dark:bg-app-canvas border-r-0 lg:border-r lg:border-neutral-200 lg:dark:border-white/5 pb-[env(safe-area-inset-bottom)] w-[var(--mobile-sidebar-width)] select-none [webkit-user-select:none] [webkit-touch-callout:none] lg:pb-0 lg:sticky lg:top-0 lg:bottom-auto lg:h-dvh lg:self-start lg:z-40 lg:w-auto ${
         showSidebarExpanded
           ? `flex flex-col overflow-hidden lg:w-72${!isDesktop && !isMapOpen ? ' pointer-events-none' : ''}`
           : 'pointer-events-none lg:pointer-events-auto lg:overflow-visible lg:w-14'
@@ -2120,8 +2024,93 @@ export default function ComprensionApp() {
       aria-hidden={!showSidebarExpanded && !isDesktop}
     >
       {showSidebarExpanded ? (
-      <div className="flex flex-col h-full min-h-0 w-full lg:w-72">
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-6 lg:pt-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]">
+      <div className="sidebar-shell relative flex flex-col h-full min-h-0 w-full lg:w-72 isolate overflow-hidden">
+        <div className="mobile-sidebar relative flex-1 min-h-0 w-full lg:hidden">
+          <div className="sidebar-scroll overscroll-y-contain touch-pan-y select-none [webkit-user-select:none] [webkit-touch-callout:none]">
+            <div className="sidebar-list px-6">
+              {appState === 'result' && data && (
+                <div className="mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsIndexExpanded((prev) => !prev)}
+                    className="w-full flex items-center gap-2 mb-4 text-left rounded-lg -mx-2 px-2 py-1 hover:bg-neutral-200/50 dark:hover:bg-white/5 transition-colors"
+                    aria-expanded={isIndexExpanded}
+                  >
+                    <ChevronDown
+                      className={`w-4 h-4 shrink-0 text-neutral-400 transition-transform ${isIndexExpanded ? '' : '-rotate-90'}`}
+                    />
+                    <span className="text-xs font-bold tracking-widest uppercase text-neutral-400 dark:text-neutral-400">
+                      Índice
+                    </span>
+                  </button>
+
+                  {isIndexExpanded && (
+                    <>
+                  <nav className="flex flex-col gap-1">
+                    <button
+                      onClick={() => handleStepClick(0)}
+                      className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${currentStep === 0 && !isComplete ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                    >
+                      <span>Idea central</span>
+                    </button>
+
+                    <div className="w-px h-6 bg-neutral-200 dark:bg-white/5 ml-8 my-1" />
+
+                    {data?.steps?.map((step: any, idx: number) => {
+                      const stepNum = idx + 1;
+                      const isActive = currentStep === stepNum && !isComplete;
+                      const isPast = currentStep > stepNum || isComplete;
+                      return (
+                        <button
+                          key={step.id}
+                          onClick={() => handleStepClick(stepNum)}
+                          className={`text-left px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-100/50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-white/5'}`}
+                        >
+                          <span className="flex items-center gap-3 min-w-0 lg:flex-1 lg:pr-8">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 dark:bg-white/10 flex items-center justify-center text-xs font-bold text-neutral-500 dark:text-neutral-400">
+                              {stepNum}
+                            </span>
+                            <span className="truncate">{step.shortNav}</span>
+                          </span>
+                          <CheckCircle2
+                            className={`w-4 h-4 shrink-0 ${
+                              isPast ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-600'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </nav>
+
+                  {!isComplete && renderViewModeToggle('mt-4')}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {storageError && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{storageError}</p>
+              )}
+              {syncError && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-4 px-1">{syncError}</p>
+              )}
+
+              <HistoryPanel
+                entries={historyStore.entries}
+                activeId={historyStore.activeId}
+                disabled={appState === 'loading'}
+                showTopDivider={appState === 'result' && Boolean(data)}
+                onSelect={handleSelectHistory}
+                onDelete={handleDeleteHistory}
+                onTogglePin={handleTogglePinHistory}
+                onRename={handleRenameHistory}
+              />
+            </div>
+          </div>
+          <header className="sidebar-header px-6">{renderSidebarBrand(true)}</header>
+        </div>
+
+        <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-y-contain touch-pan-y px-6 pt-8 select-none [webkit-user-select:none] [webkit-touch-callout:none]">
           {renderSidebarBrand()}
 
           {appState === 'result' && data && (
@@ -2536,7 +2525,7 @@ export default function ComprensionApp() {
     if (!chatOpen || !data) return null;
 
     return (
-      <div className="mt-10 rounded-3xl border border-neutral-200 dark:border-white/10 bg-white dark:bg-white/[0.03] overflow-hidden">
+      <div className="mt-10 rounded-[20px] bg-white/80 dark:bg-neutral-900/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_12px_40px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.6)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35),inset_0_1px_1px_rgba(255,255,255,0.08)] overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b border-neutral-200 dark:border-white/8 px-5 py-4">
           <div>
             <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
@@ -2589,8 +2578,8 @@ export default function ComprensionApp() {
                 key={`${turn.role}-${index}`}
                 className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                   turn.role === 'user'
-                    ? 'ml-auto max-w-[85%] bg-indigo-600 text-white'
-                    : 'max-w-[92%] bg-neutral-100 text-neutral-800 dark:bg-white/[0.05] dark:text-neutral-200'
+                    ? 'ml-auto max-w-[85%] bg-indigo-600 text-white rounded-[20px]'
+                    : 'max-w-[92%] bg-neutral-100 text-neutral-800 dark:bg-white/10 dark:text-neutral-200 rounded-[20px]'
                 }`}
               >
                 <p className="whitespace-pre-wrap">{turn.text}</p>
@@ -2626,6 +2615,53 @@ export default function ComprensionApp() {
     );
   };
 
+  const renderEssentialsReview = () => (
+    <div className="animate-fade-in content-column py-14">
+      <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Repaso esencial</p>
+      <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-[#1A1A1A] dark:text-[#EDEDED]">
+        {data?.coreIdea}
+      </h2>
+      {(data?.completionCard?.takeaways?.length ? data.completionCard.takeaways : data?.tldr?.map((t) => `${t.title}: ${t.desc}`) ?? []).length ? (
+        <div className="mt-8 rounded-3xl bg-white dark:bg-white/[0.03] px-5 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+            Para recordar
+          </p>
+          <ul className="mt-4 space-y-3">
+            {(data?.completionCard?.takeaways?.length
+              ? data.completionCard.takeaways
+              : data?.tldr?.map((t) => `${t.title}: ${t.desc}`) ?? []
+            )
+              .slice(0, 7)
+              .map((item, index) => (
+                <li key={`${item}-${index}`} className="flex gap-3 text-base leading-relaxed text-neutral-700 dark:text-neutral-200">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                  <span>{item}</span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ) : null}
+      <div className="mt-10 flex flex-wrap gap-3">
+        <button
+          onClick={() => setEssentialsReview(false)}
+          className="px-6 py-3 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+        >
+          Volver al mapa completado
+        </button>
+        <button
+          onClick={() => {
+            setEssentialsReview(false);
+            setIsComplete(false);
+            handleStepClick(0);
+          }}
+          className="px-6 py-3 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+        >
+          Volver al inicio
+        </button>
+      </div>
+    </div>
+  );
+
   const renderCompletion = () => (
     <div className="animate-fade-in content-column py-14">
       <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-400">
@@ -2657,13 +2693,20 @@ export default function ComprensionApp() {
 
       <div className="mt-10 grid gap-3 sm:grid-cols-2">
         <button
+          onClick={() => setEssentialsReview(true)}
+          className="px-6 py-4 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+        >
+          Repasar lo esencial
+        </button>
+        <button
           onClick={() => {
             setIsComplete(false);
+            setEssentialsReview(false);
             handleStepClick(0);
           }}
           className="px-6 py-4 rounded-2xl font-semibold border border-neutral-200 dark:border-white/10 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
         >
-          Repasar lo esencial
+          Volver al inicio
         </button>
         <button
           onClick={() => void handleDownloadCheatsheet()}
@@ -2705,6 +2748,11 @@ export default function ComprensionApp() {
       <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
         {data?.title}
       </h1>
+      {isStreamGenerating && (
+        <p className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 animate-pulse">
+          Generando mapa…
+        </p>
+      )}
       {showReadingTime && totalMinutes !== null && (
         <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
           <Clock className="w-4 h-4" aria-hidden="true" />
@@ -2735,7 +2783,7 @@ export default function ComprensionApp() {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="absolute left-4 top-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-indigo-400/20 dark:text-indigo-300 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] transition-all active:scale-95 shrink-0"
+          className="absolute left-6 top-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-neutral-500/10 text-neutral-600 shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] dark:bg-neutral-500/20 dark:text-neutral-400 dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all duration-200 hover:bg-neutral-500/20 dark:hover:bg-white/10 hover:scale-105 active:scale-95 shrink-0"
           title="Abrir navegación"
           aria-label="Abrir navegación"
         >
@@ -2785,6 +2833,30 @@ export default function ComprensionApp() {
                 );
               })}
             </div>
+            <div className="mx-auto mt-4 flex max-w-md gap-1 rounded-xl bg-neutral-100/80 p-1 dark:bg-white/5">
+              {DEPTH_OPTIONS.map((option) => {
+                const isActive = depthPreference === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setDepthPreference(option.id);
+                      saveDepthPreference(option.id);
+                    }}
+                    disabled={appState === 'loading'}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                      isActive
+                        ? 'bg-white text-indigo-700 shadow-sm dark:bg-neutral-800 dark:text-indigo-300'
+                        : 'text-neutral-600 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                    }`}
+                    title={option.hint}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {error && (
@@ -2799,7 +2871,7 @@ export default function ComprensionApp() {
         <div className="composer-dock">
           <div className="max-w-3xl mx-auto">
             <div className="relative overflow-visible group" ref={attachMenuRef}>
-              <div className="relative overflow-hidden rounded-[32px] bg-white/40 dark:bg-white/[0.02] backdrop-blur-3xl backdrop-saturate-[1.5] shadow-[0_12px_40px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,1)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.05)] transition-all duration-500 hover:shadow-[0_16px_48px_rgba(0,0,0,0.08)]">
+              <div className="relative overflow-hidden rounded-[22px] bg-white/40 dark:bg-[#3F4142] backdrop-blur-3xl dark:backdrop-blur-[40px] backdrop-saturate-[1.5] dark:backdrop-saturate-[2] shadow-[0_12px_40px_rgba(0,0,0,0.06),inset_0_1px_1px_rgba(255,255,255,1)] dark:shadow-[0_2px_24px_rgba(0,0,0,0.25),inset_0_1px_0.5px_#626463,inset_0_-1px_0.5px_#626463] transition-all duration-500 hover:shadow-[0_16px_48px_rgba(0,0,0,0.08)]">
                 <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100 dark:from-white/10 pointer-events-none" />
                 <div className="relative z-10">
                   {uploadedFile && (
@@ -2852,13 +2924,17 @@ export default function ComprensionApp() {
                 )}
 
                 <div className="flex items-center justify-between px-4 pb-4 pt-1">
+                  <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setAttachMenuOpen((open) => !open)}
+                    onClick={() => {
+                      setModelPickerOpen(false);
+                      setAttachMenuOpen((open) => !open);
+                    }}
                     className={`p-2.5 rounded-full transition-colors ${
                       attachMenuOpen
                         ? 'bg-neutral-100 dark:bg-white/10 text-neutral-800 dark:text-neutral-200'
-                        : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/5'
+                        : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-white/10 dark:bg-white/10'
                     }`}
                     title="Adjuntar"
                     aria-label="Adjuntar"
@@ -2870,11 +2946,28 @@ export default function ComprensionApp() {
                     />
                   </button>
 
+                  <div ref={modelPickerRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachMenuOpen(false);
+                        setModelPickerOpen((open) => !open);
+                      }}
+                      disabled={appState === 'loading'}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-neutral-500/10 dark:bg-white/10 text-neutral-600 dark:text-neutral-300 disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {MODEL_OPTIONS.find((o) => o.id === modelPreference)?.label ?? 'Automático'}
+                      <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+                    </button>
+                  </div>
+                  </div>
 
                   <button
                     id="hidden-submit-btn"
                     type="button"
-                    onClick={handleTransform}
+                    onClick={() => void handleTransform()}
+                    onMouseDown={(event) => event.stopPropagation()}
                     disabled={!canSubmit || appState === 'loading'}
                     className={`w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-95 disabled:opacity-40 select-none shrink-0 ${
                       canSubmit && appState !== 'loading'
@@ -2889,6 +2982,37 @@ export default function ComprensionApp() {
                 </div>
                 </div>
               </div>
+
+              {modelPickerOpen && (
+                <div
+                  className="absolute bottom-full mb-2 z-[80] w-56 rounded-[20px] border border-neutral-200 dark:border-white/10 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-2xl shadow-xl py-1 overflow-hidden animate-fade-in"
+                  style={{ left: modelPickerLeft }}
+                >
+                  {MODEL_OPTIONS.map((option) => {
+                    const isActive = modelPreference === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setModelPreference(option.id);
+                          saveModelPreference(option.id);
+                          setModelPickerOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 flex items-start gap-2 ${
+                          isActive ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'hover:bg-neutral-50 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-200">{option.label}</span>
+                          <span className="block text-xs text-neutral-500 dark:text-neutral-400">{option.hint}</span>
+                        </span>
+                        {isActive && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {attachMenuOpen && (
                 <div
@@ -3036,7 +3160,9 @@ export default function ComprensionApp() {
                 className={mainScrollAreaClass}
               >
                 <div
-                  className="max-w-3xl mx-auto px-6 py-8 w-full"
+                  className={`max-w-3xl mx-auto px-6 w-full ${
+                    currentStep > 0 ? 'py-10 min-h-full flex flex-col justify-center' : 'py-8'
+                  }`}
                   style={{
                     paddingBottom: `${contentBottomPad}px`,
                   }}
@@ -3065,6 +3191,23 @@ export default function ComprensionApp() {
                 </motion.div>
               )}
             </div>
+
+            {!chatOpen && (
+              <button
+                type="button"
+                onClick={() => setChatOpen(true)}
+                className="fixed bottom-24 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-transform active:scale-95 lg:right-8"
+                aria-label="Preguntar sobre este mapa"
+              >
+                <MessageSquareText className="h-5 w-5" />
+              </button>
+            )}
+
+            {chatOpen && (
+              <div className="fixed inset-x-0 bottom-0 z-50 max-h-[70vh] overflow-hidden px-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:px-8">
+                <div className="mx-auto max-w-3xl">{renderChatPanel()}</div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3083,7 +3226,7 @@ export default function ComprensionApp() {
                 {renderResultHeader(!isComplete)}
 
                 {isComplete ? (
-                  renderCompletion()
+                  essentialsReview ? renderEssentialsReview() : renderCompletion()
                 ) : (
                   <div className="animate-fade-in">
                     {renderResumen()}
@@ -3098,6 +3241,16 @@ export default function ComprensionApp() {
       </main>
 
       {/* Hidden inputs for file/image picking, kept outside conditional renders so native bridge can access them */}
+      {isNativeIOS && (
+        <button
+          type="button"
+          id="native-submit-bridge"
+          tabIndex={-1}
+          aria-hidden="true"
+          className="fixed h-px w-px opacity-0 pointer-events-none overflow-hidden"
+          onClick={() => void handleTransform()}
+        />
+      )}
       <input
         ref={fileInputRef}
         type="file"

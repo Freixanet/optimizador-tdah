@@ -8,6 +8,7 @@ export type UploadedFile = {
   size: number;
   isPdf?: boolean;
   isImage?: boolean;
+  isVideo?: boolean;
   fileData?: string;
   mimeType?: string;
   previewUri?: string;
@@ -90,6 +91,89 @@ async function readPdfAttachment(
   }
 }
 
+async function readVideoAttachment(
+  uri: string,
+  name: string,
+  size: number | undefined | null,
+  mimeType?: string | null,
+  previewUri?: string,
+): Promise<UploadedFile> {
+  assertFileSize(size);
+
+  try {
+    const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+    return {
+      name,
+      size: size ?? Math.round(base64.length * 0.75),
+      isVideo: true,
+      fileData: base64,
+      mimeType: mimeType || 'video/mp4',
+      previewUri,
+    };
+  } catch {
+    throw new Error(LOCAL_FILE_READ_ERROR_MESSAGE);
+  }
+}
+
+export type PickFileAttachmentResult =
+  | UploadedFile
+  | { file: UploadedFile; textContent: string };
+
+const FILE_PICKER_TYPES = [
+  'application/pdf',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/json',
+  'text/html',
+  'text/xml',
+  'application/rtf',
+] as const;
+
+export async function pickFileAttachment(): Promise<PickFileAttachmentResult | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: [...FILE_PICKER_TYPES],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+
+  if (result.canceled || !result.assets?.[0]) return null;
+
+  const asset = result.assets[0];
+  const name = asset.name || 'Archivo';
+  const mimeType = asset.mimeType || '';
+  const lowerName = name.toLowerCase();
+
+  if (mimeType === 'application/pdf' || lowerName.endsWith('.pdf')) {
+    return readPdfAttachment(asset.uri, name, asset.size);
+  }
+
+  if (
+    mimeType.startsWith('video/') ||
+    /\.(mp4|mov|webm|m4v|mkv)$/.test(lowerName)
+  ) {
+    return readVideoAttachment(asset.uri, name, asset.size, mimeType, asset.uri);
+  }
+
+  assertFileSize(asset.size);
+  try {
+    const textContent = await readAsStringAsync(asset.uri, { encoding: EncodingType.UTF8 });
+    return {
+      file: {
+        name,
+        size: asset.size ?? textContent.length,
+        mimeType: mimeType || 'text/plain',
+      },
+      textContent,
+    };
+  } catch {
+    throw new Error(LOCAL_FILE_READ_ERROR_MESSAGE);
+  }
+}
+
 export async function pickPdfAttachment(): Promise<UploadedFile | null> {
   const result = await DocumentPicker.getDocumentAsync({
     type: 'application/pdf',
@@ -147,4 +231,30 @@ export async function pickImageFromCamera(): Promise<UploadedFile | null> {
   if (result.canceled || !result.assets?.[0]) return null;
 
   return processImageAsset(result.assets[0]);
+}
+
+export async function pickVideoFromLibrary(): Promise<UploadedFile | null> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error('Necesitamos acceso a la galería para adjuntar videos.');
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['videos'],
+    quality: 1,
+    allowsEditing: false,
+  });
+
+  if (result.canceled || !result.assets?.[0]) return null;
+
+  const asset = result.assets[0];
+  assertFileSize(asset.fileSize);
+
+  return readVideoAttachment(
+    asset.uri,
+    asset.fileName || 'Video',
+    asset.fileSize,
+    asset.mimeType || 'video/mp4',
+    asset.uri,
+  );
 }

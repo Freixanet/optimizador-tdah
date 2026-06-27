@@ -1,6 +1,16 @@
 import React from 'react';
-import { View, useColorScheme } from 'react-native';
-import { WebView } from 'react-native-webview';
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  G,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Stop,
+} from 'react-native-svg';
+import { useTheme } from '../context/ThemeContext';
+import { ATOM_SHADING, buildAtomRibbons } from '../logic/atomGeometry';
 
 type AtomCanvasIconProps = {
   className?: string;
@@ -8,268 +18,187 @@ type AtomCanvasIconProps = {
 };
 
 export default function AtomCanvasIcon({ size = 112 }: AtomCanvasIconProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDark } = useTheme();
+  const geometry = React.useMemo(() => buildAtomRibbons(size), [size]);
+  const { cx, cy, coreR, haloR, sphereR, ribbons, rim, sphereLight } = geometry;
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <style>
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          -webkit-user-select: none;
-          user-select: none;
-        }
-        body {
-          background: transparent;
-          overflow: hidden;
-          width: 100vw;
-          height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        canvas {
-          display: block;
-          touch-action: none;
-        }
-      </style>
-    </head>
-    <body class="${isDark ? 'dark' : ''}">
-      <canvas id="canvas"></canvas>
-      <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        const size = ${size};
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = size * dpr;
-        canvas.height = size * dpr;
-        canvas.style.width = size + 'px';
-        canvas.style.height = size + 'px';
-        ctx.scale(dpr, dpr);
+  const base = isDark ? '129, 140, 248' : '79, 70, 229';
+  const coreLight = isDark ? '#C7D2FE' : '#EEF0FF';
+  const coreMid = isDark ? '#6366f1' : '#4f46e5';
+  const coreDeep = isDark ? '#312e81' : '#3730a3';
+  const orbitNearOpacity = isDark ? 0.92 : 0.88;
+  const orbitFarOpacity = isDark ? 0.18 : 0.16;
 
-        const cx = size / 2;
-        const cy = size / 2;
-        const a = size * 0.4;
-        const b = size * 0.12;
-
-        const particles = [];
-        const numOrbits = 3;
-        const particlesPerOrbit = 2;
-        const trailLength = 35;
-
-        for (let i = 0; i < numOrbits; i++) {
-          const orbitAngle = (Math.PI * 2 / numOrbits) * i;
-          const speed = 0.15 + Math.random() * 0.02;
-          for (let j = 0; j < particlesPerOrbit; j++) {
-            particles.push({
-              orbitAngle: orbitAngle,
-              phase: (Math.PI * 2 / particlesPerOrbit) * j,
-              speed: speed,
-              history: []
-            });
-          }
-        }
-
-        let isPressed = false;
-        const isDarkTheme = () => document.body.classList.contains('dark');
-
-        function draw() {
-          const dark = isDarkTheme();
-          ctx.clearRect(0, 0, size, size);
-          
-          const systemRotation = performance.now() * 0.0001;
-          const colorValues = dark ? '129, 140, 248' : '79, 70, 229';
-
-          if (!isPressed) {
-            ctx.globalCompositeOperation = 'source-over';
-            const segments = 60;
-            for (let i = 0; i < numOrbits; i++) {
-              const orbitAngle = (Math.PI * 2 / numOrbits) * i;
-              const cosR = Math.cos(orbitAngle);
-              const sinR = Math.sin(orbitAngle);
-              
-              for (let s = 0; s < segments; s++) {
-                const t1 = (Math.PI * 2 / segments) * s;
-                const t2 = (Math.PI * 2 / segments) * (s + 1);
-                const zFactor = Math.sin(t1);
-                const orbitWidth = (size / 100) * (1.5 + zFactor * 1.0);
-                const alpha = 0.18 + (zFactor * 0.12);
-
-                const x1 = cx + Math.cos(t1) * a * cosR - Math.sin(t1) * b * sinR;
-                const y1 = cy + Math.cos(t1) * a * sinR + Math.sin(t1) * b * cosR;
-                const x2 = cx + Math.cos(t2) * a * cosR - Math.sin(t2) * b * sinR;
-                const y2 = cy + Math.cos(t2) * a * sinR + Math.sin(t2) * b * cosR;
-
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.lineWidth = orbitWidth;
-                ctx.lineCap = 'round';
-                
-                if (zFactor > 0) {
-                  ctx.shadowBlur = (size / 100) * (8 * zFactor);
-                  ctx.shadowOffsetY = (size / 100) * (4 * zFactor);
-                  ctx.shadowColor = dark ? 'rgba(0,0,0,' + (0.9 * zFactor) + ')' : 'rgba(30,27,75,' + (0.4 * zFactor) + ')';
-                } else {
-                  ctx.shadowBlur = 0;
-                  ctx.shadowOffsetY = 0;
-                }
-                ctx.strokeStyle = dark ? 'rgba(129, 140, 248, ' + alpha + ')' : 'rgba(79, 70, 229, ' + alpha + ')';
-                ctx.stroke();
-
-                ctx.shadowBlur = 0;
-                ctx.shadowOffsetY = 0;
-                if (zFactor > -0.2) {
-                  ctx.beginPath();
-                  const highlightOffset = orbitWidth * 0.25;
-                  ctx.moveTo(x1, y1 - highlightOffset);
-                  ctx.lineTo(x2, y2 - highlightOffset);
-                  const highlightAlpha = (zFactor + 0.2) / 1.2 * (dark ? 0.5 : 0.4);
-                  ctx.strokeStyle = 'rgba(255,255,255,' + highlightAlpha + ')';
-                  ctx.lineWidth = orbitWidth * 0.4;
-                  ctx.stroke();
-                }
-              }
-            }
-          } else {
-            ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over';
-            particles.forEach((p) => {
-              p.phase += p.speed;
-              p.orbitAngle += 0.006;
-              const cosR = Math.cos(p.orbitAngle);
-              const sinR = Math.sin(p.orbitAngle);
-
-              const x = cx + Math.cos(p.phase) * a * cosR - Math.sin(p.phase) * b * sinR;
-              const y = cy + Math.cos(p.phase) * a * sinR + Math.sin(p.phase) * b * cosR;
-
-              p.history.push({ x, y, phase: p.phase });
-              if (p.history.length > trailLength) p.history.shift();
-
-              if (p.history.length > 1) {
-                for (let i = 0; i < p.history.length - 1; i++) {
-                  const current = p.history[i];
-                  const next = p.history[i + 1];
-                  const fadeRatio = i / p.history.length;
-                  const opacityMultiplier = Math.pow(fadeRatio, 1.5);
-                  const zFactor = Math.sin(current.phase);
-                  const trailWidth = (size / 100) * (3 + zFactor * 2);
-                  const baseAlpha = 0.7 + zFactor * 0.3;
-                  const alpha = baseAlpha * opacityMultiplier;
-
-                  ctx.beginPath();
-                  ctx.moveTo(current.x, current.y);
-                  ctx.lineTo(next.x, next.y);
-                  ctx.strokeStyle = 'rgba(' + colorValues + ',' + (alpha * 0.8) + ')';
-                  ctx.lineWidth = trailWidth;
-                  ctx.lineCap = 'round';
-
-                  if (fadeRatio > 0.7) {
-                    ctx.shadowBlur = (size / 100) * 8 * fadeRatio;
-                    ctx.shadowColor = 'rgba(' + colorValues + ',' + (alpha * 0.6) + ')';
-                  } else {
-                    ctx.shadowBlur = 0;
-                  }
-                  ctx.stroke();
-                }
-              }
-
-              const head = p.history[p.history.length - 1];
-              if (head) {
-                const zFactorHead = Math.sin(head.phase);
-                const dotRadius = (size / 100) * (2 + zFactorHead * 1.5);
-                const headAlpha = 0.7 + zFactorHead * 0.3;
-
-                ctx.beginPath();
-                ctx.arc(head.x, head.y, dotRadius, 0, Math.PI * 2);
-                ctx.fillStyle = dark ? 'rgba(255, 255, 255, ' + headAlpha + ')' : 'rgba(' + colorValues + ', ' + headAlpha + ')';
-                ctx.shadowBlur = (size / 100) * 12;
-                ctx.shadowColor = dark ? 'rgba(255, 255, 255, ' + headAlpha + ')' : 'rgba(' + colorValues + ', ' + headAlpha + ')';
-                ctx.fill();
-              }
-            });
-          }
-
-          ctx.globalCompositeOperation = 'source-over';
-          const pulse = Math.sin(systemRotation * 8) * 0.08 + 0.92;
-          const nucleusRadius = b * 0.6;
-          const nucColor = dark ? '129, 140, 248' : '79, 70, 229';
-
-          ctx.beginPath();
-          ctx.arc(cx, cy, nucleusRadius * pulse, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(' + nucColor + ', 0.9)';
-          
-          if (!isPressed) {
-            ctx.shadowBlur = (size / 100) * 15;
-            ctx.shadowOffsetY = (size / 100) * 8;
-            ctx.shadowColor = dark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(30, 27, 75, 0.5)';
-          } else {
-            ctx.shadowBlur = (size / 100) * 15;
-            ctx.shadowOffsetY = 0;
-            ctx.shadowColor = 'rgba(' + nucColor + ', 0.9)';
-          }
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.arc(cx, cy - (nucleusRadius * 0.15), nucleusRadius * pulse * 0.5, 0, Math.PI * 2);
-          ctx.fillStyle = dark ? '#fff' : 'rgba(' + nucColor + ', 1)';
-          ctx.shadowBlur = (size / 100) * 10;
-          ctx.shadowColor = dark ? '#fff' : 'rgba(' + nucColor + ', 1)';
-          ctx.fill();
-
-          ctx.shadowBlur = 0;
-          ctx.shadowOffsetY = 0;
-        }
-
-        let animFrame;
-        function loop() {
-          draw();
-          if (isPressed) {
-            animFrame = requestAnimationFrame(loop);
-          }
-        }
-
-        draw();
-
-        canvas.addEventListener('pointerdown', (e) => {
-          isPressed = true;
-          loop();
-        });
-
-        window.addEventListener('pointerup', () => {
-          if (isPressed) {
-            isPressed = false;
-            draw();
-          }
-        });
-        
-        window.addEventListener('pointercancel', () => {
-          if (isPressed) {
-            isPressed = false;
-            draw();
-          }
-        });
-      </script>
-    </body>
-    </html>
-  `;
+  const shadowDx = size * ATOM_SHADING.projectedShadowDx;
+  const shadowDy = size * ATOM_SHADING.projectedShadowDy;
+  const projectedOpacity = isDark
+    ? ATOM_SHADING.projectedShadowOpacity.dark
+    : ATOM_SHADING.projectedShadowOpacity.light;
+  const exteriorDropOpacity = isDark
+    ? ATOM_SHADING.exteriorDropOpacity.dark
+    : ATOM_SHADING.exteriorDropOpacity.light;
+  const sphereBodyOpacity = isDark
+    ? ATOM_SHADING.sphereBodyShadowOpacity.dark
+    : ATOM_SHADING.sphereBodyShadowOpacity.light;
+  const sphereDiffuseOpacity = isDark
+    ? ATOM_SHADING.sphereDiffuseOpacity.dark
+    : ATOM_SHADING.sphereDiffuseOpacity.light;
+  const sphereHighlightOpacity = isDark
+    ? ATOM_SHADING.sphereHighlightOpacity.dark
+    : ATOM_SHADING.sphereHighlightOpacity.light;
+  const sphereRimOpacity = isDark ? ATOM_SHADING.sphereRimOpacity.dark : ATOM_SHADING.sphereRimOpacity.light;
+  const rimFill = `rgba(255,255,255,${sphereRimOpacity})`;
 
   return (
-    <View style={{ width: size, height: size }}>
-      <WebView
-        originWhitelist={['*']}
-        source={{ html }}
-        style={{ backgroundColor: 'transparent' }}
-        scrollEnabled={false}
-        overScrollMode="never"
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <Defs>
+        <RadialGradient id="atomHalo" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset="0%" stopColor={`rgb(${base})`} stopOpacity={isDark ? 0.22 : 0.16} />
+          <Stop offset="65%" stopColor={`rgb(${base})`} stopOpacity={0.04} />
+          <Stop offset="100%" stopColor={`rgb(${base})`} stopOpacity={0} />
+        </RadialGradient>
+
+        <RadialGradient id="atomExteriorShadow" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop
+            offset="0%"
+            stopColor={isDark ? 'rgb(0,0,0)' : 'rgb(30,27,75)'}
+            stopOpacity={isDark ? 0.5 : 0.4}
+          />
+          <Stop offset="100%" stopColor="rgb(0,0,0)" stopOpacity={0} />
+        </RadialGradient>
+
+        <LinearGradient id="atomSphereBody" x1="25%" y1="22%" x2="78%" y2="82%">
+          <Stop offset="0%" stopColor="rgb(255,255,255)" stopOpacity={sphereBodyOpacity * 0.9} />
+          <Stop offset="55%" stopColor="rgb(255,255,255)" stopOpacity={0} />
+          <Stop offset="100%" stopColor="rgb(0,0,0)" stopOpacity={sphereBodyOpacity * 0.5} />
+        </LinearGradient>
+
+        <RadialGradient
+          id="atomSphereDiffuse"
+          gradientUnits="userSpaceOnUse"
+          cx={sphereLight.diffuseCx}
+          cy={sphereLight.diffuseCy}
+          r={sphereLight.diffuseR}
+          fx={sphereLight.diffuseCx}
+          fy={sphereLight.diffuseCy}
+        >
+          <Stop offset="0%" stopColor="rgb(255,255,255)" stopOpacity={sphereDiffuseOpacity} />
+          <Stop offset="50%" stopColor="rgb(255,255,255)" stopOpacity={sphereDiffuseOpacity * 0.35} />
+          <Stop offset="100%" stopColor="rgb(255,255,255)" stopOpacity={0} />
+        </RadialGradient>
+
+        <RadialGradient
+          id="atomSphereHighlight"
+          gradientUnits="userSpaceOnUse"
+          cx={sphereLight.specCx}
+          cy={sphereLight.specCy}
+          r={sphereLight.specR}
+          fx={sphereLight.specCx}
+          fy={sphereLight.specCy}
+        >
+          <Stop offset="0%" stopColor="rgb(255,255,255)" stopOpacity={sphereHighlightOpacity} />
+          <Stop offset="45%" stopColor="rgb(255,255,255)" stopOpacity={sphereHighlightOpacity * 0.2} />
+          <Stop offset="100%" stopColor="rgb(255,255,255)" stopOpacity={0} />
+        </RadialGradient>
+
+        <RadialGradient id="atomContactShadow" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset="0%" stopColor={isDark ? 'rgba(0,0,0,0.35)' : 'rgba(30,27,75,0.22)'} />
+          <Stop offset="100%" stopColor="rgba(0,0,0,0)" />
+        </RadialGradient>
+
+        <RadialGradient id="atomCore" cx="36%" cy="30%" rx="72%" ry="72%">
+          <Stop offset="0%" stopColor={coreLight} />
+          <Stop offset="45%" stopColor={coreMid} />
+          <Stop offset="100%" stopColor={coreDeep} />
+        </RadialGradient>
+
+        <RadialGradient id="atomCoreOcclusion" cx="68%" cy="72%" rx="55%" ry="55%">
+          <Stop offset="0%" stopColor={isDark ? 'rgba(15,15,35,0.55)' : 'rgba(30,27,75,0.45)'} />
+          <Stop offset="100%" stopColor="rgba(0,0,0,0)" />
+        </RadialGradient>
+
+        {ribbons.map((ribbon, i) => (
+          <LinearGradient
+            key={`orbitGrad-${i}`}
+            id={`orbitGrad-${i}`}
+            gradientUnits="userSpaceOnUse"
+            x1={ribbon.grad.x1}
+            y1={ribbon.grad.y1}
+            x2={ribbon.grad.x2}
+            y2={ribbon.grad.y2}
+          >
+            <Stop offset="0%" stopColor={`rgb(${base})`} stopOpacity={orbitFarOpacity} />
+            <Stop offset="100%" stopColor={`rgb(${base})`} stopOpacity={orbitNearOpacity} />
+          </LinearGradient>
+        ))}
+      </Defs>
+
+      {ATOM_SHADING.enableSphereVolume && (
+        <Ellipse
+          cx={cx + sphereR * 0.12}
+          cy={cy + sphereR * 0.62}
+          rx={sphereR * 0.7}
+          ry={sphereR * 0.2}
+          fill="url(#atomExteriorShadow)"
+          opacity={exteriorDropOpacity}
+        />
+      )}
+
+      <Circle cx={cx} cy={cy} r={haloR} fill="url(#atomHalo)" />
+
+      {ATOM_SHADING.enableSphereVolume && (
+        <>
+          <Circle cx={cx} cy={cy} r={sphereR} fill="url(#atomSphereBody)" />
+          <Circle cx={cx} cy={cy} r={sphereR} fill="url(#atomSphereDiffuse)" />
+          {rim.strokes.map((stroke, i) => (
+            <Path
+              key={`rim-${i}`}
+              d={stroke.d}
+              stroke={rimFill}
+              strokeWidth={stroke.width}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+        </>
+      )}
+
+      {ribbons.map((ribbon, i) => (
+        <Path key={`back-${i}`} d={ribbon.backPath} fill={`url(#orbitGrad-${i})`} />
+      ))}
+
+      {ATOM_SHADING.enableProjectedShadows &&
+        ribbons.map((ribbon, i) => (
+          <G key={`proj-${i}`} transform={`translate(${shadowDx}, ${shadowDy})`}>
+            <Path d={ribbon.frontPath} fill={`rgba(0,0,0,${projectedOpacity})`} />
+          </G>
+        ))}
+
+      <Ellipse
+        cx={cx}
+        cy={cy + coreR * 0.4}
+        rx={coreR * 1.2}
+        ry={coreR * 0.38}
+        fill="url(#atomContactShadow)"
       />
-    </View>
+
+      <Circle cx={cx} cy={cy} r={coreR} fill="url(#atomCore)" />
+      <Circle cx={cx} cy={cy} r={coreR} fill="url(#atomCoreOcclusion)" />
+      <Circle
+        cx={cx - coreR * 0.3}
+        cy={cy - coreR * 0.34}
+        r={coreR * 0.36}
+        fill={isDark ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.68)'}
+      />
+
+      {ribbons.map((ribbon, i) => (
+        <Path key={`front-${i}`} d={ribbon.frontPath} fill={`url(#orbitGrad-${i})`} />
+      ))}
+
+      {ATOM_SHADING.enableSphereVolume && (
+        <Circle cx={cx} cy={cy} r={sphereR} fill="url(#atomSphereHighlight)" />
+      )}
+    </Svg>
   );
 }
