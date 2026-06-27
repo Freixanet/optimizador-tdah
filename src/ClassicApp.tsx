@@ -2295,6 +2295,9 @@ export default function ClassicApp() {
               </strong>
               . Directo al punto.
             </p>
+            <p className="text-sm font-bold text-green-600 dark:text-green-400">
+              PREVIEW MOBILE OK
+            </p>
           </div>
 
           {error && (
