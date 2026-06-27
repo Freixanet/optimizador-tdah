@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mirror worktree + auto-pull mobile-preview + Expo tunnel for iPhone preview.
+# Mirror worktree + auto-pull mobile-preview + Expo LAN for iPhone preview.
 # Safe: reset --hard runs ONLY inside the sibling worktree, never in your main checkout.
 set -euo pipefail
 
@@ -8,6 +8,7 @@ REPO_NAME="$(basename "$REPO_ROOT")"
 WORKTREE_PATH="$(cd "$REPO_ROOT/.." && pwd)/${REPO_NAME}-mobile-preview"
 BRANCH="mobile-preview"
 PULL_INTERVAL=3
+PREVIEW_PORT=8082
 MOBILE_DIR="$WORKTREE_PATH/mobile"
 
 log() { printf '[mobile-preview] %s\n' "$*"; }
@@ -154,11 +155,30 @@ start_pull_loop() {
   log "Auto-pull loop started (every ${PULL_INTERVAL}s, pid $PULL_PID)."
 }
 
+free_preview_port() {
+  local pids
+  pids="$(lsof -ti tcp:"$PREVIEW_PORT" 2>/dev/null || true)"
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+  log "Freeing port $PREVIEW_PORT (preview Metro only; port 8081 untouched)..."
+  # shellcheck disable=SC2068
+  kill -9 $pids 2>/dev/null || true
+  sleep 0.5
+}
+
 start_expo() {
-  log "Starting Expo with tunnel from: $MOBILE_DIR"
-  log "Open your dev build / Expo Go on iPhone and connect to the tunnel URL."
+  local lan_ip=""
+  lan_ip="$(ipconfig getifaddr en0 2>/dev/null || true)"
+  log "Starting Expo (dev client, LAN) from: $MOBILE_DIR"
+  if [[ -n "$lan_ip" ]]; then
+    log "On iPhone (same WiFi): http://${lan_ip}:${PREVIEW_PORT}"
+  else
+    log "On iPhone (same WiFi): http://<Mac-LAN-IP>:${PREVIEW_PORT}"
+    log "Mac LAN IP: ipconfig getifaddr en0"
+  fi
   cd "$MOBILE_DIR"
-  exec npx expo start --tunnel
+  exec npx expo start --dev-client --host lan --port "$PREVIEW_PORT"
 }
 
 # --- main ---
@@ -190,5 +210,6 @@ ensure_branch_on_remote
 ensure_worktree
 sync_env_file
 install_dependencies
+free_preview_port
 start_pull_loop
 start_expo

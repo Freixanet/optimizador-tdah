@@ -9,9 +9,11 @@ Preview on your iPhone changes pushed by **Cursor mobile / Cursor Agents** on br
 | **`mobile-preview` branch** | Cursor mobile commits here and pushes to `origin`. |
 | **Main folder** (`Untitled/`) | Your normal work; never hard-reset by this setup. |
 | **Mirror worktree** (`../Untitled-mobile-preview/`) | Separate checkout; auto `git reset --hard origin/mobile-preview` every 3s. |
-| **Expo tunnel** | Runs from the mirror’s `mobile/` folder so the iPhone can load the bundle over the internet. |
+| **Expo LAN (port 8082)** | Runs from the mirror’s `mobile/` folder; iPhone loads the bundle over local WiFi. |
 
 Metro watches `shared/` from the repo root (see `mobile/metro.config.js`), so the mirror must be a full repo checkout—not `mobile/` alone.
+
+The bridge uses **port 8082** only. A separate Expo dev server on **8081** (main checkout) is left untouched.
 
 ## Start preview (Mac)
 
@@ -26,9 +28,22 @@ First run may:
 1. Create `origin/mobile-preview` if missing.
 2. Create the sibling worktree at `../Untitled-mobile-preview`.
 3. Install `mobile/node_modules` in the mirror (npm).
-4. Start auto-pull + `npx expo start --tunnel`.
+4. Free port **8082** if a previous preview Metro is still running.
+5. Start auto-pull + `npx expo start --dev-client --host lan --port 8082`.
 
-On iPhone: open your **Expo dev client** (or Expo Go if compatible) and connect using the **tunnel** QR code or URL from the terminal.
+### Mac LAN IP
+
+```bash
+ipconfig getifaddr en0
+```
+
+Example: `192.168.1.16` → on iPhone connect the **dev build** to:
+
+```text
+http://192.168.1.16:8082
+```
+
+iPhone and Mac must be on the **same WiFi**. No tunnel or ngrok is used.
 
 ## Cursor mobile workflow
 
@@ -70,6 +85,12 @@ If `mobile/.env` exists in your **main** checkout but not in the mirror, the bri
 ## Stop
 
 Press **`Ctrl+C`** in the terminal running `mobile:preview`. The auto-pull loop is stopped via `trap`.
+
+To stop only the preview Metro on 8082 without touching 8081:
+
+```bash
+lsof -ti tcp:8082 | xargs kill -9
+```
 
 ## Remove the mirror (reversible)
 
