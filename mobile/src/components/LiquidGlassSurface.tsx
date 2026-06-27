@@ -1,20 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Platform,
-  StyleProp,
-  StyleSheet,
-  View,
-  ViewStyle,
-} from 'react-native';
-import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-  isLiquidGlassAvailable,
-} from 'expo-glass-effect';
+import React from 'react';
+import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { GlassView } from 'expo-glass-effect';
 import { useTheme } from '../context/ThemeContext';
+import { useGlassAccessibility } from '../hooks/useGlassAccessibility';
+import { COMPOSER_DARK_SURFACE } from '@shared/uiTokens';
 
 export type LiquidGlassVariant = 'regular' | 'clear' | 'composer';
+
+export type GlassEffectStyleName = 'clear' | 'regular' | 'none';
 
 export type LiquidGlassSurfaceProps = {
   children: React.ReactNode;
@@ -22,18 +15,11 @@ export type LiquidGlassSurfaceProps = {
   borderRadius: number;
   tintColor?: string;
   variant: LiquidGlassVariant;
+  /** Native UIGlassEffect interactive mode (expo `isInteractive`). No visual style change. */
+  interactive?: boolean;
 };
 
-export function canUseNativeLiquidGlass(reduceTransparency: boolean): boolean {
-  if (Platform.OS !== 'ios') return false;
-  if (Number(Platform.Version) < 26) return false;
-  if (reduceTransparency) return false;
-  try {
-    return isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
+export { canUseNativeLiquidGlass } from '../logic/glassAvailability';
 
 function fallbackColors(
   isDark: boolean,
@@ -48,7 +34,7 @@ function fallbackColors(
   }
   if (variant === 'composer') {
     return {
-      backgroundColor: isDark ? 'rgba(38, 38, 38, 0.95)' : 'rgba(255, 255, 255, 0.96)',
+      backgroundColor: isDark ? COMPOSER_DARK_SURFACE : 'rgba(255, 255, 255, 0.96)',
       borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
     };
   }
@@ -64,8 +50,10 @@ function fallbackColors(
   };
 }
 
-function glassEffectStyle(variant: LiquidGlassVariant) {
-  return variant === 'clear' ? 'clear' : 'regular';
+/** Stable native glass style — composer always stays `regular` (no idle/focus material swap). */
+export function resolveGlassEffectStyle(variant: LiquidGlassVariant): GlassEffectStyleName {
+  if (variant === 'clear') return 'clear';
+  return 'regular';
 }
 
 export default function LiquidGlassSurface({
@@ -74,44 +62,25 @@ export default function LiquidGlassSurface({
   borderRadius,
   tintColor,
   variant,
+  interactive = false,
 }: LiquidGlassSurfaceProps) {
   const { isDark } = useTheme();
-  const [reduceTransparency, setReduceTransparency] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    void AccessibilityInfo.isReduceTransparencyEnabled().then(setReduceTransparency);
-    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-
-    const transparencySub = AccessibilityInfo.addEventListener(
-      'reduceTransparencyChanged',
-      setReduceTransparency
-    );
-    const motionSub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-
-    return () => {
-      transparencySub.remove();
-      motionSub.remove();
-    };
-  }, []);
+  const { reduceMotion, nativeGlass } = useGlassAccessibility();
 
   const shellStyle: ViewStyle = {
     borderRadius,
     overflow: 'hidden',
   };
 
-  const nativeGlass = canUseNativeLiquidGlass(reduceTransparency);
   const fallback = fallbackColors(isDark, variant, tintColor);
 
   if (nativeGlass) {
-    const styleKey = glassEffectStyle(variant);
     return (
       <View style={[shellStyle, style]}>
         <GlassView
           style={StyleSheet.absoluteFill}
-          glassEffectStyle={
-            reduceMotion ? styleKey : { style: styleKey, animate: false }
-          }
+          glassEffectStyle={resolveGlassEffectStyle(variant)}
+          isInteractive={interactive && !reduceMotion}
           tintColor={tintColor}
           colorScheme={isDark ? 'dark' : 'light'}
         />

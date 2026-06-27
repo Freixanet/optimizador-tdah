@@ -269,6 +269,12 @@ function buildSphereLight(cx: number, cy: number, sphereR: number): SphereLight 
 /** Global rotation of the whole atom, in degrees (clockwise / "to the right"). */
 export const ATOM_ROTATION_DEG = 90;
 
+/**
+ * Yaw (degrees) added to the two inclined orbits (indices 1 and 2) so their
+ * intersection points lie on the fixed vertical orbit (index 0, spin 0).
+ */
+export const ATOM_INCLINED_ORBIT_YAW_DEG = 61;
+
 export function buildAtomRibbons(size: number): AtomGeometry {
   const cx = size / 2;
   const cy = size / 2;
@@ -279,10 +285,23 @@ export function buildAtomRibbons(size: number): AtomGeometry {
   const maxHalfW = scale * 1.35;
   const samples = 120;
   const rotation = -(ATOM_ROTATION_DEG * Math.PI) / 180;
+  const inclinedYaw = (ATOM_INCLINED_ORBIT_YAW_DEG * Math.PI) / 180;
 
-  const ribbons = [0, 1, 2].map((i) =>
-    buildRingRibbon(size, cx, cy, -(i * 60 * Math.PI) / 180, radius, tilt, samples, minHalfW, maxHalfW, rotation)
-  );
+  const ribbons = [0, 1, 2].map((i) => {
+    const spin = i === 0 ? 0 : -(i * 60 * Math.PI) / 180 + inclinedYaw;
+    return buildRingRibbon(
+      size,
+      cx,
+      cy,
+      spin,
+      radius,
+      tilt,
+      samples,
+      minHalfW,
+      maxHalfW,
+      rotation
+    );
+  });
 
   const rimBrightAngle = (ATOM_SHADING.rimBrightAngleDeg * Math.PI) / 180;
   const arcHalfRad = (ATOM_SHADING.rimArcHalfDeg * Math.PI) / 180;

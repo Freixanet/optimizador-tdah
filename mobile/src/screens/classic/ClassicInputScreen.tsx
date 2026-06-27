@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Image,
   Platform,
@@ -14,6 +14,7 @@ import AttachMenu from '../../components/AttachMenu';
 import AtomCanvasIcon from '../../components/AtomCanvasIcon';
 import ComposerSurface from '../../components/ComposerSurface';
 import ComposerDock from '../../components/ComposerDock';
+import FloatingGlassButton from '../../components/FloatingGlassButton';
 import MenuTwoLines from '../../components/MenuTwoLines';
 import ModelChip from '../../components/ModelChip';
 import { useTheme } from '../../context/ThemeContext';
@@ -29,6 +30,8 @@ export default function ClassicInputScreen() {
   const mutedIcon = isDark ? '#a3a3a3' : '#737373';
   const handleScrollBeginDrag = useDismissKeyboardOnScroll();
   const [composerHeight, setComposerHeight] = useState(176);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const composerInputRef = useRef<TextInput>(null);
   const composerPlaceholder = session.uploadedFile?.isImage
     ? 'Añade una indicación (opcional)…'
     : session.uploadedFile
@@ -39,13 +42,16 @@ export default function ClassicInputScreen() {
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-neutral-50 dark:bg-neutral-900">
       <View className="flex-1 px-4">
           <View className="flex-row items-center gap-2 pt-1 pb-2">
-            <Pressable
-              onPress={() => session.setHistoryOpen(true)}
-              className="ml-2 w-11 h-11 rounded-full items-center justify-center bg-neutral-500/[0.08] dark:bg-white/[0.08] active:opacity-80"
-              accessibilityLabel="Abrir navegacion"
-            >
-              <MenuTwoLines size={18} color={navIconColor} />
-            </Pressable>
+            <View className="ml-2">
+              <FloatingGlassButton
+                onPress={() => session.setHistoryOpen(true)}
+                accessibilityLabel="Abrir navegacion"
+                shape="circle"
+                size={44}
+              >
+                <MenuTwoLines size={18} color={navIconColor} />
+              </FloatingGlassButton>
+            </View>
           </View>
 
           <ScrollView
@@ -78,7 +84,7 @@ export default function ClassicInputScreen() {
           </ScrollView>
 
           <ComposerDock onHeightChange={setComposerHeight}>
-            <ComposerSurface>
+            <ComposerSurface focused={composerFocused} inputRef={composerInputRef}>
             {session.uploadedFile ? (
               <View className="px-5 pt-4 pb-1">
                 {session.uploadedFile.isImage && session.uploadedFile.previewUri ? (
@@ -120,8 +126,11 @@ export default function ClassicInputScreen() {
 
             {!session.hideTextInput ? (
               <TextInput
+                ref={composerInputRef}
                 value={session.inputText}
                 onChangeText={session.setInputText}
+                onFocus={() => setComposerFocused(true)}
+                onBlur={() => setComposerFocused(false)}
                 placeholder={composerPlaceholder}
                 placeholderTextColor={isDark ? '#737373' : '#a3a3a3'}
                 multiline

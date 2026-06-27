@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { BLUR_INTENSITY } from '@shared/uiTokens';
+import { BLUR_INTENSITY, COMPOSER_DARK_SURFACE } from '@shared/uiTokens';
 import { useTheme } from '../context/ThemeContext';
 import LiquidGlassSurface, { type LiquidGlassVariant } from './LiquidGlassSurface';
 
@@ -43,7 +43,7 @@ export default function GlassSurface({
     const tint =
       variant === 'composer'
         ? isDark
-          ? 'rgba(38, 38, 38, 0.35)'
+          ? COMPOSER_DARK_SURFACE
           : 'rgba(255, 255, 255, 0.45)'
         : undefined;
 
@@ -57,6 +57,13 @@ export default function GlassSurface({
         >
           <View />
         </LiquidGlassSurface>
+        {overlayClassName ? (
+          <View
+            pointerEvents="none"
+            className={`absolute inset-0 ${overlayClassName}`}
+            style={{ borderRadius, overflow: 'hidden' }}
+          />
+        ) : null}
         <View className={`relative z-10 ${contentClassName}`.trim()}>{children}</View>
       </View>
     );
@@ -68,7 +75,7 @@ export default function GlassSurface({
     overlayClassName ??
     (variant === 'composer'
       ? isDark
-        ? 'bg-neutral-900'
+        ? 'bg-[#3E4041]'
         : 'bg-neutral-50'
       : isDark
         ? 'bg-neutral-900/80'

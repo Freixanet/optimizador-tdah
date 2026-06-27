@@ -51,7 +51,7 @@ function AppShell() {
   }, []);
 
   return (
-    <>
+    <View className={isDark ? 'dark flex-1' : 'flex-1'} style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <AppVariantProvider onVariantChange={handleVariantChange}>
         <AppSessionProvider key={appVariant}>
@@ -59,7 +59,7 @@ function AppShell() {
           <AuthHost />
         </AppSessionProvider>
       </AppVariantProvider>
-    </>
+    </View>
   );
 }
 

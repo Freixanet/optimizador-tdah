@@ -6,7 +6,9 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { Layers, List } from 'lucide-react-native';
+import FloatingGlassButton from './FloatingGlassButton';
 import MenuTwoLines from './MenuTwoLines';
+import { useTheme } from '../context/ThemeContext';
 
 type ReadingProgressBarProps = {
   viewAll: boolean;
@@ -27,6 +29,8 @@ export default function ReadingProgressBar({
   onToggleViewMode,
   scrollProgress = 0,
 }: ReadingProgressBarProps) {
+  const { isDark } = useTheme();
+  const navIconColor = isDark ? '#d4d4d4' : '#525252';
   const progress = useSharedValue(viewAll ? scrollProgress : stepProgress / 100);
   const [shownPercent, setShownPercent] = useState(
     viewAll ? Math.round(scrollProgress * 100) : Math.round(stepProgress)
@@ -46,13 +50,14 @@ export default function ReadingProgressBar({
     <View className="shrink-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-white/5">
       <View className="flex-row items-center justify-between gap-3 py-2.5 px-3">
         <View className="flex-row min-w-0 items-center gap-2 flex-1">
-          <Pressable
+          <FloatingGlassButton
             onPress={onToggleSidebar}
-            className="ml-1 w-8 h-8 rounded-full bg-neutral-500/10 items-center justify-center"
             accessibilityLabel="Abrir navegación"
+            shape="circle"
+            size={32}
           >
-            <MenuTwoLines size={18} color="#525252" />
-          </Pressable>
+            <MenuTwoLines size={18} color={navIconColor} />
+          </FloatingGlassButton>
           <Text
             className="flex-1 text-xs font-bold text-neutral-800 dark:text-neutral-100"
             numberOfLines={1}

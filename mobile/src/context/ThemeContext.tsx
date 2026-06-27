@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
+import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import { getStorage } from '@shared/storage';
 
 export type ThemeMode = 'light' | 'dark';
@@ -40,6 +41,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    nativeWindColorScheme.set(theme);
+  }, [theme]);
 
   const value = useMemo(
     () => ({

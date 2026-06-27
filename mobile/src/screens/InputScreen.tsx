@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Image,
   Platform,
@@ -9,44 +9,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowUp, BookOpen, File, GraduationCap, ListChecks, X } from 'lucide-react-native';
+import { ArrowUp, File, X } from 'lucide-react-native';
 import AttachMenu from '../components/AttachMenu';
 import AtomCanvasIcon from '../components/AtomCanvasIcon';
 import ComposerSurface from '../components/ComposerSurface';
 import ComposerDock from '../components/ComposerDock';
-import GlassSurface from '../components/GlassSurface';
+import FloatingGlassButton from '../components/FloatingGlassButton';
+import IntentSelector from '../components/IntentSelector';
 import MenuTwoLines from '../components/MenuTwoLines';
 import ModelChip from '../components/ModelChip';
 import { useTheme } from '../context/ThemeContext';
-import { stepHaptic, useAppSession } from '../context/AppSessionContext';
+import { useAppSession } from '../context/AppSessionContext';
 import { useDismissKeyboardOnScroll } from '../logic/keyboardDismiss';
-import type { MapIntent } from '../logic/contracts';
-
-const INTENT_OPTIONS: Array<{
-  id: MapIntent;
-  title: string;
-  description: string;
-  icon: typeof BookOpen;
-}> = [
-  {
-    id: 'understand',
-    title: 'Comprender',
-    description: 'Idea central, contexto, argumentos y matices.',
-    icon: BookOpen,
-  },
-  {
-    id: 'study',
-    title: 'Estudiar',
-    description: 'Conceptos, relaciones y repaso para retener.',
-    icon: GraduationCap,
-  },
-  {
-    id: 'apply',
-    title: 'Aplicar',
-    description: 'Decisiones, pasos, riesgos y siguiente acción.',
-    icon: ListChecks,
-  },
-];
 
 export default function InputScreen() {
   const session = useAppSession();
@@ -57,18 +31,31 @@ export default function InputScreen() {
   const mutedIcon = isDark ? '#a3a3a3' : '#737373';
   const handleScrollBeginDrag = useDismissKeyboardOnScroll();
   const [composerHeight, setComposerHeight] = useState(176);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const composerInputRef = useRef<TextInput>(null);
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-neutral-50 dark:bg-neutral-900">
       <View className="flex-1 px-4">
-          <View className="flex-row items-center gap-2 pt-1 pb-2">
-            <Pressable
-              onPress={() => session.setHistoryOpen(true)}
-              className="ml-2 w-11 h-11 rounded-full items-center justify-center bg-neutral-500/[0.08] dark:bg-white/[0.08] active:opacity-80"
-              accessibilityLabel="Abrir navegacion"
-            >
-              <MenuTwoLines size={18} color={navIconColor} />
-            </Pressable>
+          <View className="flex-row items-center pt-1 pb-3">
+            <View className="ml-2">
+              <FloatingGlassButton
+                onPress={() => session.setHistoryOpen(true)}
+                accessibilityLabel="Abrir navegacion"
+                shape="circle"
+                size={44}
+              >
+                <MenuTwoLines size={18} color={navIconColor} />
+              </FloatingGlassButton>
+            </View>
+            <View className="flex-1 items-center">
+              <IntentSelector
+                value={session.intent}
+                onChange={session.setIntent}
+                disabled={session.phase === 'loading'}
+              />
+            </View>
+            <View className="w-11" />
           </View>
 
           <ScrollView
@@ -77,63 +64,14 @@ export default function InputScreen() {
             keyboardShouldPersistTaps="handled"
             alwaysBounceVertical={Platform.OS === 'ios'}
             onScrollBeginDrag={handleScrollBeginDrag}
-            contentContainerClassName="items-center px-1 pt-7"
-            contentContainerStyle={{ paddingBottom: composerHeight + 16 }}
+            contentContainerClassName="items-center px-1"
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              paddingBottom: composerHeight + 16,
+            }}
           >
             <AtomCanvasIcon size={80} />
-
-            <View className="mt-6 w-full max-w-xl gap-2.5">
-              {INTENT_OPTIONS.map((option) => {
-                const isActive = session.intent === option.id;
-                const Icon = option.icon;
-                return (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => {
-                      session.setIntent(option.id);
-                      stepHaptic();
-                    }}
-                    className="rounded-[20px] overflow-hidden active:opacity-95"
-                  >
-            <GlassSurface
-              liquid={false}
-              className="rounded-[20px]"
-              overlayClassName={
-                        isActive
-                          ? 'bg-indigo-50/75 dark:bg-indigo-500/[0.12]'
-                          : 'bg-white/45 dark:bg-white/[0.04]'
-                      }
-                    >
-                      <View className="px-4 py-4">
-                        <View className="flex-row items-center gap-3">
-                          <View
-                            className={`w-8 h-8 rounded-full items-center justify-center ${
-                              isActive
-                                ? 'bg-indigo-500/15 dark:bg-indigo-400/20'
-                                : 'bg-neutral-500/[0.08] dark:bg-white/[0.06]'
-                            }`}
-                          >
-                            <Icon size={16} color={isActive ? accentIcon : mutedIcon} />
-                          </View>
-                          <Text
-                            className={`text-[15px] font-semibold tracking-tight ${
-                              isActive
-                                ? 'text-indigo-900 dark:text-indigo-200'
-                                : 'text-neutral-700 dark:text-neutral-300'
-                            }`}
-                          >
-                            {option.title}
-                          </Text>
-                        </View>
-                        <Text className="mt-2.5 text-[13px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                          {option.description}
-                        </Text>
-                      </View>
-                    </GlassSurface>
-                  </Pressable>
-                );
-              })}
-            </View>
 
             {session.error ? (
               <View className="mt-5 w-full max-w-xl rounded-2xl border border-red-200/80 dark:border-red-500/20 bg-red-50/90 dark:bg-red-500/[0.08] px-4 py-3">
@@ -143,7 +81,7 @@ export default function InputScreen() {
           </ScrollView>
 
           <ComposerDock onHeightChange={setComposerHeight}>
-            <ComposerSurface>
+            <ComposerSurface focused={composerFocused} inputRef={composerInputRef}>
             {session.uploadedFile ? (
               <View className="px-5 pt-4 pb-1">
                 {session.uploadedFile.isImage && session.uploadedFile.previewUri ? (
@@ -185,8 +123,11 @@ export default function InputScreen() {
 
             {!session.hideTextInput ? (
               <TextInput
+                ref={composerInputRef}
                 value={session.inputText}
                 onChangeText={session.setInputText}
+                onFocus={() => setComposerFocused(true)}
+                onBlur={() => setComposerFocused(false)}
                 placeholder={session.composerPlaceholder}
                 placeholderTextColor={isDark ? '#737373' : '#a3a3a3'}
                 multiline

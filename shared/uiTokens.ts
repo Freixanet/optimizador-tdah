@@ -5,6 +5,6 @@ export const INSET_HIGHLIGHT_DARK = 'inset 0 1px 1px rgba(255,255,255,0.08)';
 export const BLUR_INTENSITY = 24;
 export const DRAWER_CORNER_RADIUS = RADII.xl;
 export const COMPOSER_CORNER_RADIUS = 22;
-export const COMPOSER_DARK_SURFACE = '#3F4142';
+export const COMPOSER_DARK_SURFACE = '#3E4041';
 export const COMPOSER_DARK_INSET =
   '0 2px 24px rgba(0,0,0,0.25), inset 0 1px 0.5px #626463, inset 0 -1px 0.5px #626463';

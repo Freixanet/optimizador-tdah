@@ -1,19 +1,29 @@
 import React from 'react';
-import GlassSurface from './GlassSurface';
+import { TextInput } from 'react-native';
+import LiquidGlassMotionShell from './LiquidGlassMotionShell';
 
 type ComposerSurfaceProps = {
   children: React.ReactNode;
+  /** Sustained focus — native interactive glass + focused idle scale (1.006). */
+  focused?: boolean;
+  /** Optional TextInput ref — tapping the shell chrome focuses the field. */
+  inputRef?: React.RefObject<TextInput | null>;
 };
 
-export default function ComposerSurface({ children }: ComposerSurfaceProps) {
+export default function ComposerSurface({
+  children,
+  focused = false,
+  inputRef,
+}: ComposerSurfaceProps) {
   return (
-    <GlassSurface
-      liquid
+    <LiquidGlassMotionShell
       borderRadius={26}
       variant="composer"
+      focused={focused}
+      inputRef={inputRef}
       className="rounded-[26px] border border-neutral-200/70 dark:border-white/[0.08]"
     >
       {children}
-    </GlassSurface>
+    </LiquidGlassMotionShell>
   );
 }

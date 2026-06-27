@@ -9,6 +9,8 @@ type FloatingGlassButtonProps = {
   children: React.ReactNode;
   shape?: 'circle' | 'pill';
   tone?: 'neutral' | 'accent';
+  /** Circle diameter in points. Defaults to {@link FLOATING_CIRCLE_SIZE}. */
+  size?: number;
 };
 
 export const FLOATING_CIRCLE_SIZE = 52;
@@ -18,14 +20,15 @@ export function FloatingGlassShell({
   children,
   shape = 'pill',
   tone = 'neutral',
-}: Pick<FloatingGlassButtonProps, 'children' | 'shape' | 'tone'>) {
+  size = FLOATING_CIRCLE_SIZE,
+}: Pick<FloatingGlassButtonProps, 'children' | 'shape' | 'tone' | 'size'>) {
   const { isDark } = useTheme();
   const isAccent = tone === 'accent';
   const isCircle = shape === 'circle';
 
   const circleSizeStyle = {
-    width: FLOATING_CIRCLE_SIZE,
-    height: FLOATING_CIRCLE_SIZE,
+    width: size,
+    height: size,
   };
 
   if (isAccent) {
@@ -48,7 +51,7 @@ export function FloatingGlassShell({
       <View style={[styles.shadow, circleSizeStyle]}>
         <GlassSurface
           liquid
-          borderRadius={FLOATING_CIRCLE_SIZE / 2}
+          borderRadius={size / 2}
           className={`h-full w-full overflow-hidden rounded-full border ${
             isDark ? 'border-white/10' : 'border-white/60'
           }`}
@@ -82,6 +85,7 @@ export default function FloatingGlassButton({
   children,
   shape = 'pill',
   tone = 'neutral',
+  size = FLOATING_CIRCLE_SIZE,
 }: FloatingGlassButtonProps) {
   return (
     <Pressable
@@ -90,7 +94,7 @@ export default function FloatingGlassButton({
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [pressed ? styles.pressed : null]}
     >
-      <FloatingGlassShell shape={shape} tone={tone}>
+      <FloatingGlassShell shape={shape} tone={tone} size={size}>
         {children}
       </FloatingGlassShell>
     </Pressable>

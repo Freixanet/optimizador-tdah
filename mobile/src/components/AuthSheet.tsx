@@ -12,13 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, X } from 'lucide-react-native';
-import {
-  signInWithPassword,
+import { signInWithPassword,
   signInWithProvider,
   signOut,
   signUpWithPassword,
 } from '../logic/cloudHistory';
 import GlassSurface from './GlassSurface';
+import { useTheme } from '../context/ThemeContext';
 
 type AuthSheetProps = {
   visible: boolean;
@@ -37,6 +37,7 @@ function authErrorMessage(err: unknown): string {
 }
 
 export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProps) {
+  const { isDark } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
