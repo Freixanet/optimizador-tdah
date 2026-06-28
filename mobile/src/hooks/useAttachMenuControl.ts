@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { Keyboard, Platform, type TextInput } from 'react-native';
 import { useAttachMenuAnchor } from './useAttachMenuAnchor';
 
-const OPEN_AFTER_KEYBOARD_MS = 50;
+const OPEN_AFTER_KEYBOARD_MS = 120; // 120ms to allow layout to settle after keyboard dismiss
 
 type UseAttachMenuControlArgs = {
   attachMenuOpen: boolean;
@@ -22,14 +22,12 @@ export function useAttachMenuControl({
   phase,
 }: UseAttachMenuControlArgs) {
   const pendingOpenRef = useRef(false);
-  const pendingComposerHeightRef = useRef<number | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const keyboardVisibleRef = useRef(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const clearPendingOpen = useCallback(() => {
     pendingOpenRef.current = false;
-    pendingComposerHeightRef.current = null;
     if (openTimerRef.current) {
       clearTimeout(openTimerRef.current);
       openTimerRef.current = null;
@@ -58,7 +56,6 @@ export function useAttachMenuControl({
         return;
       }
       pendingOpenRef.current = false;
-      pendingComposerHeightRef.current = null;
       setAttachMenuOpen(true);
     }, OPEN_AFTER_KEYBOARD_MS);
   }, [setAttachMenuOpen]);
@@ -76,6 +73,11 @@ export function useAttachMenuControl({
       keyboardVisibleRef.current = false;
       setKeyboardVisible(false);
       if (pendingOpenRef.current) {
+        // Cancel safety fallback timer and schedule immediate settled open
+        if (openTimerRef.current) {
+          clearTimeout(openTimerRef.current);
+          openTimerRef.current = null;
+        }
         requestAnimationFrame(() => {
           scheduleOpenAfterKeyboard();
         });
@@ -91,16 +93,6 @@ export function useAttachMenuControl({
       clearPendingOpen();
     };
   }, [clearPendingOpen, scheduleOpenAfterKeyboard]);
-
-  useEffect(() => {
-    if (!pendingOpenRef.current || pendingComposerHeightRef.current === null) {
-      return;
-    }
-
-    if (pendingComposerHeightRef.current !== composerHeight) {
-      clearPendingOpen();
-    }
-  }, [clearPendingOpen, composerHeight]);
 
   useEffect(() => {
     if (phase === 'loading') {
@@ -131,16 +123,26 @@ export function useAttachMenuControl({
 
     if (isKeyboardVisible()) {
       pendingOpenRef.current = true;
-      pendingComposerHeightRef.current = composerHeight;
       composerInputRef.current?.blur();
       Keyboard.dismiss();
+
+      // Safety fallback: if keyboardDidHide fails to fire, force open after 380ms
+      if (openTimerRef.current) {
+        clearTimeout(openTimerRef.current);
+      }
+      openTimerRef.current = setTimeout(() => {
+        openTimerRef.current = null;
+        if (pendingOpenRef.current) {
+          pendingOpenRef.current = false;
+          setAttachMenuOpen(true);
+        }
+      }, 380);
       return;
     }
 
     setAttachMenuOpen(true);
   }, [
     attachMenuOpen,
-    composerHeight,
     composerInputRef,
     dismissAttachMenu,
     clearPendingOpen,

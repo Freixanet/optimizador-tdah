@@ -168,7 +168,7 @@ export function FloatingGlassShell({
   );
 }
 
-export default function FloatingGlassButton({
+function FloatingGlassButton({
   onPress,
   accessibilityLabel,
   children,
@@ -197,6 +197,8 @@ export default function FloatingGlassButton({
     </Pressable>
   );
 }
+
+export default React.memo(FloatingGlassButton);
 
 const styles = StyleSheet.create({
   shadow: {

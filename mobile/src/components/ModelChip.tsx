@@ -12,7 +12,7 @@ type ModelChipProps = {
   disabled?: boolean;
 };
 
-export default function ModelChip({ value, onChange, disabled = false }: ModelChipProps) {
+function ModelChip({ value, onChange, disabled = false }: ModelChipProps) {
   const { isDark } = useTheme();
   const [open, setOpen] = useState(false);
   const activeOption = DEPTH_OPTIONS.find((option) => option.id === value) ?? DEPTH_OPTIONS[1];
@@ -101,3 +101,5 @@ export default function ModelChip({ value, onChange, disabled = false }: ModelCh
     </>
   );
 }
+
+export default React.memo(ModelChip);

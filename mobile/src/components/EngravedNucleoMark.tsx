@@ -97,7 +97,7 @@ type EngravedNucleoMarkProps = {
   rowHeight?: number;
 };
 
-export default function EngravedNucleoMark({
+function EngravedNucleoMark({
   style,
   fontSize = ENGRAVED_NUCLEO_FONT_SIZE,
   tone = 'hero',
@@ -169,3 +169,5 @@ export default function EngravedNucleoMark({
     </View>
   );
 }
+
+export default React.memo(EngravedNucleoMark);

@@ -5,6 +5,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AttachAnchorRect } from '../hooks/useAttachMenuAnchor';
 import AttachMenuPopover, { ATTACH_MENU_WIDTH } from './AttachMenuPopover';
 
@@ -32,6 +34,8 @@ export default function AttachMenuOverlay({
   onPickFile,
   darkSurface = false,
 }: AttachMenuOverlayProps) {
+  const insets = useSafeAreaInsets();
+
   if (!open || !anchorRect) {
     return null;
   }
@@ -46,13 +50,29 @@ export default function AttachMenuOverlay({
 
   return (
     <View style={styles.host} pointerEvents="box-none">
-      <Pressable
-        style={[styles.scrim, { bottom: scrimBottomInset }]}
-        onPress={onClose}
-        accessibilityLabel="Cerrar menú de adjuntos"
-      />
+      <Animated.View
+        entering={FadeIn.duration(160)}
+        exiting={FadeOut.duration(120)}
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            top: -insets.top,
+            left: -12,
+            right: -12,
+            bottom: -insets.bottom - 100,
+          },
+        ]}
+      >
+        <Pressable
+          style={styles.scrim}
+          onPress={onClose}
+          accessibilityLabel="Cerrar menú de adjuntos"
+        />
+      </Animated.View>
 
-      <View
+      <Animated.View
+        entering={FadeIn.duration(180)}
+        exiting={FadeOut.duration(120)}
         style={[
           styles.menu,
           {
@@ -69,7 +89,7 @@ export default function AttachMenuOverlay({
           onPickCamera={() => runPick(onPickCamera)}
           onPickFile={() => runPick(onPickFile)}
         />
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -81,7 +101,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    backgroundColor: 'rgba(0, 0, 0, 0.11)',
     zIndex: 100,
   },
   menu: {

@@ -345,7 +345,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       });
     }, 700);
     return () => clearTimeout(timer);
-  }, [historyStore, cloudSignedIn]);
+  }, [historyStore.entries, cloudSignedIn]);
 
   const goToStep = useCallback((idx: number, fromViewAll = false) => {
     setIsComplete(false);

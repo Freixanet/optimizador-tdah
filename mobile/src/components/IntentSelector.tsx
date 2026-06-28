@@ -50,7 +50,7 @@ function triggerHaptic() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 
-export default function IntentSelector({ value, onChange, disabled = false }: IntentSelectorProps) {
+function IntentSelector({ value, onChange, disabled = false }: IntentSelectorProps) {
   const { isDark } = useTheme();
   const activeIndex = selectedIndex(value);
   const [segmentWidth, setSegmentWidth] = useState(0);
@@ -283,3 +283,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export default React.memo(IntentSelector);
