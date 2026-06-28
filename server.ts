@@ -1411,19 +1411,56 @@ async function startServer() {
     }
   });
 
-  app.get("/api/maps/:id/cheatsheet.pdf", (req, res) => {
-    const map = mapCache.get(req.params.id);
-    if (!map) {
-      return res.status(404).json({ error: "La ficha ya no está disponible en el servidor." });
-    }
-    void renderCheatsheetPdf(buildCheatsheetModel(map)).then((pdf) => {
+  app.get("/api/maps/:id/cheatsheet.pdf", async (req, res) => {
+    try {
+      const mapId = req.params.id;
+      let map = mapCache.get(mapId);
+
+      if (!map) {
+        const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+        if (token && supabaseUrl && supabaseAnonKey) {
+          const targetUrl = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/maps?id=eq.${encodeURIComponent(mapId)}&select=session`;
+          const response = await fetch(targetUrl, {
+            headers: {
+              apikey: supabaseAnonKey,
+              Authorization: `Bearer ${token}`,
+            },
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (response.ok) {
+            const rows = await response.json();
+            if (Array.isArray(rows) && rows.length > 0) {
+              const candidate = rows[0]?.session?.data;
+              if (
+                candidate &&
+                typeof candidate === "object" &&
+                (typeof candidate.title === "string" || Array.isArray(candidate.steps))
+              ) {
+                map = candidate as ActionMapData;
+                mapCache.set(mapId, map);
+              }
+            }
+          }
+        }
+      }
+
+      if (!map) {
+        return res.status(404).json({ error: "La ficha ya no está disponible o no tienes acceso." });
+      }
+
+      const pdf = await renderCheatsheetPdf(buildCheatsheetModel(map));
+      const safeMapId = mapId.replace(/[^\w.-]+/g, "-");
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${req.params.id}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="nucleo-cheatsheet-${safeMapId}.pdf"`);
       res.send(pdf);
-    }).catch((err) => {
-      console.error(err);
+    } catch (err) {
+      console.error("Error al generar cheatsheet PDF por GET:", err);
       res.status(500).json({ error: "No se pudo generar la ficha PDF." });
-    });
+    }
   });
 
   app.post("/api/maps/:id/cheatsheet.pdf", (req, res) => {
