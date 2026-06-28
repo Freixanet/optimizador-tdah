@@ -12,6 +12,7 @@ import {
   migrateLocalHistory,
   pullCloudHistory,
   pushHistoryEntry,
+  signOut,
 } from '../logic/cloudHistory';
 import { toCloudUserProfile } from '../logic/cloudUserProfile';
 import {
@@ -162,6 +163,7 @@ type AppSessionContextValue = {
   isStreamGenerating: boolean;
   transformIncomplete: boolean;
   dismissTransformIncomplete: () => void;
+  handleSignOut: () => Promise<void>;
 };
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
@@ -673,6 +675,41 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     setPhase('input');
   }, []);
 
+  const handleSignOut = useCallback(async () => {
+    // 1. Cerrar drawers y overlays
+    setHistoryOpen(false);
+    setChatOpen(false);
+    setAuthOpen(false);
+
+    // 2. Limpiar estados del mapa y UI
+    setData(null);
+    setInputText('');
+    setUploadedFile(null);
+    setPhase('input');
+    setError(null);
+    setTransformIncomplete(false);
+    setCurrentStep(0);
+    setIsComplete(false);
+    setViewAll(false);
+
+    // 3. Limpiar variables de la nube
+    setCloudUserEmail(null);
+    setCloudUserAvatarUrl(null);
+
+    // 4. Purgar historial local de mapas en disco y memoria de forma segura
+    const emptyStore = { entries: [], activeId: null };
+    setHistoryStore(emptyStore);
+    saveHistory(emptyStore);
+
+    // 5. Ejecutar signOut remoto
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Error al cerrar sesión remota:', err);
+      throw err;
+    }
+  }, []);
+
   const handleSelectHistory = useCallback(
     (id: string) => {
       const entry = historyStore.entries.find((e) => e.id === id);
@@ -904,6 +941,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       isStreamGenerating,
       transformIncomplete,
       dismissTransformIncomplete,
+      handleSignOut,
     }),
     [
       phase,
@@ -959,6 +997,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       isStreamGenerating,
       transformIncomplete,
       dismissTransformIncomplete,
+      handleSignOut,
     ]
   );
 

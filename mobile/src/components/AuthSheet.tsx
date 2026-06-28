@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, X } from 'lucide-react-native';
 import { signInWithPassword,
   signInWithProvider,
-  signOut,
   signUpWithPassword,
 } from '../logic/cloudHistory';
 import GlassSurface from './GlassSurface';
@@ -96,7 +95,7 @@ export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProp
     if (busy) return;
     setBusy(true);
     try {
-      await signOut();
+      await session.handleSignOut();
       onClose();
     } catch (err) {
       setError(authErrorMessage(err));
