@@ -1,16 +1,15 @@
-import React, { useState } from 'react';
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Check,
   ChevronLeft,
-  ChevronRight,
   LogIn,
   LogOut,
   Moon,
   Settings,
   Sun,
-  UserRound,
 } from 'lucide-react-native';
+import ProfileAvatar from './ProfileAvatar';
 import GlassSurface from './GlassSurface';
 import { FloatingGlassShell, FLOATING_CIRCLE_SIZE } from './FloatingGlassButton';
 import { useAppSession, stepHaptic } from '../context/AppSessionContext';
@@ -24,79 +23,79 @@ type ProfileMenuProps = {
   floating?: boolean;
 };
 
-function ProfileAvatar({ signedIn, floating }: { signedIn: boolean; floating?: boolean }) {
-  if (floating) {
-    return <UserRound size={20} color={signedIn ? '#4f46e5' : '#525252'} />;
-  }
+const MENU_WIDTH = 168;
+const MENU_GAP = 10;
+const SCREEN = Dimensions.get('window');
 
-  return (
-    <View
-      className={`w-9 h-9 rounded-full items-center justify-center ${
-        signedIn ? 'bg-indigo-600' : 'bg-neutral-500/10 dark:bg-white/10'
-      }`}
-    >
-      <UserRound size={18} color={signedIn ? '#ffffff' : '#525252'} />
-    </View>
-  );
-}
+type MenuAnchor = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
 
 export default function ProfileMenu({ placement = 'topRight', floating = false }: ProfileMenuProps) {
   const session = useAppSession();
   const { theme, toggleTheme } = useTheme();
   const { onVariantChange } = useAppVariantSwitch();
+  const anchorRef = useRef<View>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'root' | 'settings'>('root');
+  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
 
-  const closeMenu = () => {
+  const closeMenu = useCallback(() => {
     setOpen(false);
     setView('root');
-  };
+  }, []);
 
-  const menuPanelClass =
-    placement === 'bottomLeft' ? 'absolute left-0 z-50' : 'absolute top-11 right-0 z-50';
-  const menuPanelStyle =
-    placement === 'bottomLeft' ? { bottom: FLOATING_CIRCLE_SIZE + 10 } : undefined;
+  const updateAnchor = useCallback(() => {
+    anchorRef.current?.measureInWindow((left, top, width, height) => {
+      setAnchor({ left, top, width, height });
+    });
+  }, []);
 
-  const trigger = (
-    <Pressable
-      onPress={() => {
-        setOpen((current) => {
-          if (current) setView('root');
-          return !current;
-        });
-        stepHaptic();
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={session.cloudSignedIn ? 'Tu cuenta' : 'Cuenta y ajustes'}
-      accessibilityState={{ expanded: open }}
-      className={floating ? 'active:opacity-80' : 'rounded-xl p-1 active:opacity-80'}
-    >
-      {floating ? (
-        <FloatingGlassShell shape="circle">
-          <ProfileAvatar signedIn={session.cloudSignedIn} floating />
-        </FloatingGlassShell>
-      ) : (
-        <ProfileAvatar signedIn={session.cloudSignedIn} />
-      )}
-    </Pressable>
-  );
+  useEffect(() => {
+    if (!open) {
+      setAnchor(null);
+      return;
+    }
+    updateAnchor();
+  }, [open, updateAnchor]);
+
+  const menuPosition = anchor
+    ? placement === 'bottomLeft'
+      ? {
+          left: Math.max(12, Math.min(anchor.left, SCREEN.width - MENU_WIDTH - 12)),
+          bottom: SCREEN.height - anchor.top + MENU_GAP,
+        }
+      : {
+          left: Math.max(
+            12,
+            Math.min(anchor.left + anchor.width - MENU_WIDTH, SCREEN.width - MENU_WIDTH - 12)
+          ),
+          top: anchor.top + anchor.height + MENU_GAP,
+        }
+    : null;
+
+  const menuIconColor = '#ffffff';
+  const iconStroke = 2.25;
 
   const renderMenuContent = () => {
     if (view === 'settings') {
       return (
-        <>
+        <View className="py-2 px-2">
           <Pressable
             onPress={() => setView('root')}
-            className="flex-row items-center gap-2 px-3 py-3 border-b border-neutral-200/60 dark:border-white/10"
+            className="flex-row items-center gap-2.5 px-2.5 py-3.5 -mx-2 -mt-2 border-b border-neutral-200/60 dark:border-white/10"
           >
-            <ChevronLeft size={16} color="#737373" />
-            <Text className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
+            <ChevronLeft size={20} color={menuIconColor} strokeWidth={iconStroke} />
+            <Text className="text-base font-semibold text-neutral-700 dark:text-neutral-200">
               Ajustes
             </Text>
           </Pressable>
 
-          <View className="px-3 py-2.5">
-            <Text className="text-[10px] font-bold tracking-widest uppercase text-neutral-400">
+          <View className="px-2.5 py-2">
+            <Text className="text-[11px] font-bold tracking-widest uppercase text-neutral-400">
               Experiencia
             </Text>
           </View>
@@ -113,19 +112,19 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
                   onVariantChange(option.id);
                   stepHaptic();
                 }}
-                className={`px-3 py-2.5 flex-row items-start gap-2 ${
+                className={`px-2.5 py-3 flex-row items-start gap-2.5 rounded-[14px] ${
                   isActive ? 'bg-indigo-50 dark:bg-indigo-500/10' : ''
                 } ${session.phase === 'loading' ? 'opacity-50' : ''}`}
               >
-                <View className="flex-1">
-                  <Text className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                <View className="flex-1 min-w-0">
+                  <Text className="text-base font-semibold text-neutral-800 dark:text-neutral-200">
                     {option.label}
                   </Text>
-                  <Text className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <Text className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
                     {option.hint}
                   </Text>
                 </View>
-                {isActive ? <Check size={16} color="#4f46e5" /> : null}
+                {isActive ? <Check size={20} color="#4f46e5" /> : null}
               </Pressable>
             );
           })}
@@ -136,29 +135,32 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
                 toggleTheme();
                 stepHaptic();
               }}
-              className="px-3 py-2.5 flex-row items-center gap-2.5"
+              className="px-2.5 py-3.5 flex-row items-center gap-3 rounded-[14px] active:bg-neutral-100/70 dark:active:bg-white/[0.06]"
             >
-              {theme === 'light' ? <Moon size={16} color="#737373" /> : <Sun size={16} color="#737373" />}
-              <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              {theme === 'light' ? (
+                <Moon size={20} color={menuIconColor} strokeWidth={iconStroke} />
+              ) : (
+                <Sun size={20} color={menuIconColor} strokeWidth={iconStroke} />
+              )}
+              <Text className="text-base font-semibold text-neutral-700 dark:text-neutral-300">
                 {theme === 'light' ? 'Modo oscuro' : 'Modo claro'}
               </Text>
             </Pressable>
           </View>
-        </>
+        </View>
       );
     }
 
     return (
-      <View className="py-1">
+      <View className="py-2 px-2">
         <Pressable
           onPress={() => setView('settings')}
-          className="px-3 py-2.5 flex-row items-center gap-2.5"
+          className="px-2.5 py-4 flex-row items-center gap-3 rounded-[14px] active:bg-neutral-100/70 dark:active:bg-white/[0.06]"
         >
-          <Settings size={16} color="#737373" />
-          <Text className="flex-1 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+          <Settings size={20} color={menuIconColor} strokeWidth={iconStroke} />
+          <Text className="flex-1 text-base font-semibold text-neutral-700 dark:text-neutral-300">
             Ajustes
           </Text>
-          <ChevronRight size={16} color="#a3a3a3" />
         </Pressable>
 
         {session.cloudSignedIn ? (
@@ -168,10 +170,10 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
               void signOut();
               stepHaptic();
             }}
-            className="px-3 py-2.5 flex-row items-center gap-2.5"
+            className="px-2.5 py-4 flex-row items-center gap-3 rounded-[14px] active:bg-neutral-100/70 dark:active:bg-white/[0.06]"
           >
-            <LogOut size={16} color="#737373" />
-            <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            <LogOut size={20} color={menuIconColor} strokeWidth={iconStroke} />
+            <Text className="text-base font-semibold text-neutral-700 dark:text-neutral-300">
               Cerrar sesión
             </Text>
           </Pressable>
@@ -182,10 +184,10 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
               session.openAuthSheet();
               stepHaptic();
             }}
-            className="px-3 py-2.5 flex-row items-center gap-2.5"
+            className="px-2.5 py-4 flex-row items-center gap-3 rounded-[14px] active:bg-neutral-100/70 dark:active:bg-white/[0.06]"
           >
-            <LogIn size={16} color="#737373" />
-            <Text className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            <LogIn size={20} color={menuIconColor} strokeWidth={iconStroke} />
+            <Text className="text-base font-semibold text-neutral-700 dark:text-neutral-300">
               Iniciar sesión
             </Text>
           </Pressable>
@@ -195,35 +197,68 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
   };
 
   return (
-    <View className="relative z-50">
-      {trigger}
+    <>
+      <View ref={anchorRef} collapsable={false} className="relative z-50">
+        <Pressable
+          onPress={() => {
+            setOpen((current) => {
+              if (current) setView('root');
+              return !current;
+            });
+            stepHaptic();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={session.cloudSignedIn ? 'Tu cuenta' : 'Cuenta y ajustes'}
+          accessibilityState={{ expanded: open }}
+          className={floating ? 'active:opacity-80' : 'rounded-xl p-1 active:opacity-80'}
+        >
+          {floating ? (
+            <FloatingGlassShell shape="circle" size={FLOATING_CIRCLE_SIZE} prominent>
+              <ProfileAvatar
+                signedIn={session.cloudSignedIn}
+                avatarUrl={session.cloudUserAvatarUrl}
+                floating
+              />
+            </FloatingGlassShell>
+          ) : (
+            <ProfileAvatar
+              signedIn={session.cloudSignedIn}
+              avatarUrl={session.cloudUserAvatarUrl}
+            />
+          )}
+        </Pressable>
+      </View>
 
-      {open ? (
-        <>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={closeMenu}>
+        <View style={styles.modalRoot}>
           <Pressable
-            style={styles.backdrop}
+            style={StyleSheet.absoluteFill}
             onPress={closeMenu}
             accessibilityLabel="Cerrar menú de cuenta"
           />
-          <View className={menuPanelClass} style={menuPanelStyle} pointerEvents="box-none">
-            <GlassSurface liquid borderRadius={20} className="w-72 rounded-[20px] shadow-xl">
-              {renderMenuContent()}
-            </GlassSurface>
-          </View>
-        </>
-      ) : null}
-    </View>
+          {menuPosition ? (
+            <View
+              pointerEvents="box-none"
+              style={[styles.menuHost, menuPosition, { width: MENU_WIDTH }]}
+              accessibilityRole="menu"
+            >
+              <GlassSurface liquid borderRadius={20} className="rounded-[20px] shadow-xl">
+                {renderMenuContent()}
+              </GlassSurface>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+    </>
   );
 }
 
-const window = Dimensions.get('window');
 const styles = StyleSheet.create({
-  backdrop: {
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  menuHost: {
     position: 'absolute',
-    top: -window.height,
-    left: -window.width,
-    width: window.width * 3,
-    height: window.height * 3,
-    zIndex: 40,
   },
 });

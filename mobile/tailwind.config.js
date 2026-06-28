@@ -9,8 +9,10 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // We will define our custom theme color palette here to match the web app's style.
-      }
+        neutral: {
+          900: '#181A1F',
+        },
+      },
     },
   },
   plugins: [],

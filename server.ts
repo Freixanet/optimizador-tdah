@@ -14,6 +14,12 @@ import type {
   SourceReference,
   TransformRequest,
 } from "./src/contracts";
+import {
+  DEFAULT_MAP_CATEGORIES,
+  FALLBACK_MAP_CATEGORY,
+  normalizeTags,
+  resolveMapCategory,
+} from "./shared/categories";
 
 type AuthenticatedRequest = express.Request & { userId?: string };
 
@@ -278,6 +284,7 @@ type TransformContext = {
   type: TransformRequest["type"];
   mapId?: string;
   maxOutputTokens: number;
+  existingCategories: string[];
 };
 
 async function buildTransformContext(body: TransformRequest): Promise<TransformContext | { error: string; status: number }> {
@@ -292,6 +299,7 @@ async function buildTransformContext(body: TransformRequest): Promise<TransformC
     sourceLabel,
     mapId,
     depth,
+    existingCategories,
   } = body;
 
   const resolvedIntent: MapIntent =
@@ -331,6 +339,9 @@ async function buildTransformContext(body: TransformRequest): Promise<TransformC
     outputLanguage: resolvedOutputLanguage,
     sourceLabel,
     depth: resolvedDepth,
+    existingCategories: Array.isArray(existingCategories)
+      ? existingCategories.filter((item) => typeof item === 'string').slice(0, 20)
+      : [],
   });
 
   let contents: TransformContext["contents"];
@@ -374,6 +385,9 @@ async function buildTransformContext(body: TransformRequest): Promise<TransformC
     type,
     mapId,
     maxOutputTokens: maxOutputTokensForDepth(resolvedDepth),
+    existingCategories: Array.isArray(existingCategories)
+      ? existingCategories.filter((item) => typeof item === 'string').slice(0, 20)
+      : [],
   };
 }
 
@@ -403,6 +417,7 @@ function finalizeMapJson(
     outputLanguage: context.resolvedOutputLanguage,
     sourceKind: context.type,
     sourceLabel: context.sourceLabel,
+    existingCategories: context.existingCategories,
   });
   normalized.modelUsed = usedModel;
   cacheMap(context.mapId, normalized);
@@ -435,6 +450,7 @@ async function handleTransformStream(
       outputLanguage: context.resolvedOutputLanguage,
       sourceKind: context.type,
       sourceLabel: context.sourceLabel,
+      existingCategories: context.existingCategories,
     });
 
     if (!isPartialMapRenderable(normalized)) return;
@@ -514,6 +530,16 @@ const schema = {
   type: Type.OBJECT,
   properties: {
     title: { type: Type.STRING },
+    suggestedCategory: {
+      type: Type.STRING,
+      description:
+        "Categoría principal del mapa. Debe ser una de las categorías permitidas o una categoría personalizada existente del usuario.",
+    },
+    suggestedTags: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "Entre 2 y 5 etiquetas cortas que describen el mapa.",
+    },
     category: { type: Type.STRING },
     intent: { type: Type.STRING, description: "Opciones: 'understand', 'study', 'apply'" },
     outputLanguage: { type: Type.STRING },
@@ -758,7 +784,13 @@ function estimateStepMinutes(
 
 function normalizeMapData(
   parsed: any,
-  fallback: { intent: MapIntent; outputLanguage: string; sourceKind: string; sourceLabel: string }
+  fallback: {
+    intent: MapIntent;
+    outputLanguage: string;
+    sourceKind: string;
+    sourceLabel: string;
+    existingCategories?: string[];
+  }
 ): ActionMapData {
   const normalizedSteps = Array.isArray(parsed?.steps)
     ? parsed.steps.map((step: any, index: number) => {
@@ -798,7 +830,11 @@ function normalizeMapData(
 
   const normalized: ActionMapData = {
     title: String(parsed?.title || "Mapa sin título"),
-    category: parsed?.category ? String(parsed.category) : undefined,
+    category: resolveMapCategory(
+      parsed?.suggestedCategory ?? parsed?.category,
+      fallback.existingCategories ?? []
+    ),
+    tags: normalizeTags(parsed?.suggestedTags ?? parsed?.tags),
     intent: parsed?.intent === "study" || parsed?.intent === "apply" ? parsed.intent : fallback.intent,
     outputLanguage: String(parsed?.outputLanguage || fallback.outputLanguage),
     mapVersion: Number.isFinite(parsed?.mapVersion) ? Number(parsed.mapVersion) : 2,
@@ -895,12 +931,14 @@ function buildTransformPrompt({
   outputLanguage,
   sourceLabel,
   depth = 'estandar',
+  existingCategories = [],
 }: {
   type: TransformRequest["type"];
   intent: MapIntent;
   outputLanguage: string;
   sourceLabel?: string;
   depth?: TransformRequest["depth"];
+  existingCategories?: string[];
 }) {
   const formatGuide =
     type === "youtube"
@@ -929,6 +967,16 @@ function buildTransformPrompt({
           ].join(' ')
         : 'Granularidad equilibrada: una unidad principal por paso.';
 
+  const categoryOptions = [
+    ...DEFAULT_MAP_CATEGORIES,
+    ...existingCategories.filter(
+      (category) =>
+        !DEFAULT_MAP_CATEGORIES.some(
+          (item) => item.toLowerCase() === category.toLowerCase()
+        )
+    ),
+  ];
+
   return [
     `Objetivo del lector: ${intentLabel(intent)} (${intent}).`,
     `Idioma de salida: ${outputLanguage}.`,
@@ -938,6 +986,15 @@ function buildTransformPrompt({
     sourceLabel ? `Etiqueta visible de la fuente: ${sourceLabel}.` : "",
     formatGuide,
     "Genera una lectura fiel, útil a la primera y sin tono infantil.",
+    `Clasificación automática: asigna suggestedCategory (exactamente una de: ${categoryOptions.join(
+      " | "
+    )}) y suggestedTags (entre 2 y 5 etiquetas cortas en español).`,
+    existingCategories.length
+      ? `Prioriza estas categorías personalizadas del usuario antes de proponer una nueva: ${existingCategories.join(
+          ", "
+        )}.`
+      : "",
+    `Si no tienes confianza clara sobre la categoría, usa "${FALLBACK_MAP_CATEGORY}".`,
     "La coreIdea debe ser una frase corta y memorable; evita párrafos, matices largos o dos ideas en una.",
     "En 'tldr' entrega de 3 a 6 puntos.",
     "En 'knowledgeSections' resume las secciones mayores.",

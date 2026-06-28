@@ -7,7 +7,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import AtomCanvasIcon from './AtomCanvasIcon';
 
 const PHASES = [
   'Leyendo la fuente',
@@ -74,8 +73,7 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
   return (
     <View className="flex-1 items-center justify-center px-6 bg-neutral-50 dark:bg-neutral-900">
       <View className="w-full max-w-md">
-        <View className="flex-row items-center gap-3 mb-8">
-          <AtomCanvasIcon size={44} />
+        <View className="mb-8">
           <Text className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
             {PHASES[phaseIndex]}
           </Text>

@@ -21,7 +21,7 @@ export default function ComposerSurface({
       variant="composer"
       focused={focused}
       inputRef={inputRef}
-      className="rounded-[26px] border border-neutral-200/70 dark:border-white/[0.08]"
+      className="rounded-[26px]"
     >
       {children}
     </LiquidGlassMotionShell>

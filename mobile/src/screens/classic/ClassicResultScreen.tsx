@@ -1,18 +1,26 @@
-import React, { useMemo, useState } from 'react';
-import { NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { NativeScrollEvent, NativeSyntheticEvent, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  runOnJS,
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from 'react-native-reanimated';
 import {
-  ArrowRight,
-  Check,
   CheckCircle2,
   Clock,
   SquarePen,
 } from 'lucide-react-native';
 import AppIcon from '../../components/AppIcon';
+import FloatingGlassButton from '../../components/FloatingGlassButton';
 import ReadingProgressBar from '../../components/ReadingProgressBar';
+import SourceMetadataGlassCard from '../../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../../components/StepContentBlocks';
+import StepFooterNav from '../../components/StepFooterNav';
 import { useAppSession } from '../../context/AppSessionContext';
+import { useViewAllScrollSpy } from '../../hooks/useViewAllScrollSpy';
 
 function parseTotalMinutes(steps: Array<{ time?: string }> | undefined): number | null {
   if (!steps?.length) return null;
@@ -28,43 +36,107 @@ function parseTotalMinutes(steps: Array<{ time?: string }> | undefined): number 
   return found ? total : null;
 }
 
+const VIEW_ALL_SECTION_DIVIDER = 'pb-8 mb-8 border-b border-neutral-200 dark:border-white/10';
+const VIEW_ALL_SECTION_BEFORE_COMPLETION = 'pb-8';
+const VIEW_ALL_COMPLETION_SECTION = 'pt-8 pb-8 border-t border-neutral-200 dark:border-white/10';
+
 export default function ClassicResultScreen() {
   const session = useAppSession();
   const { data } = session;
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const showStepFooter = !session.viewAll && !session.isComplete;
+  const scrollProgress = useSharedValue(0);
+  const syncReadingStep = useCallback(
+    (step: number) => session.syncReadingStep(step),
+    [session]
+  );
+  const { registerSectionLayout, handleScrollViewLayout, handleScroll, resetSpy } = useViewAllScrollSpy({
+    enabled: session.viewAll && !session.isComplete,
+    totalSteps: session.totalSteps,
+    onStepChange: syncReadingStep,
+  });
+
+  useEffect(() => {
+    if (!session.viewAll) resetSpy();
+  }, [resetSpy, session.viewAll]);
+
+  useEffect(() => {
+    if (!session.viewAll) {
+      scrollProgress.value = 0;
+    }
+  }, [scrollProgress, session.viewAll]);
+
   const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps), [data?.steps]);
 
-  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (!session.viewAll) return;
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const maxScroll = contentSize.height - layoutMeasurement.height;
-    const ratio = maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, contentOffset.y / maxScroll));
-    setScrollProgress(ratio);
-  };
-
-  const stepKey = useMemo(
-    () => `${session.currentStep}-${session.viewAll}-${session.isComplete}`,
-    [session.currentStep, session.isComplete, session.viewAll]
+  const reportScrollSpy = useCallback(
+    (scrollY: number, contentHeight: number) => {
+      if (!session.viewAll) return;
+      handleScroll({
+        nativeEvent: {
+          contentOffset: { y: scrollY, x: 0 },
+          contentSize: { height: contentHeight, width: 0 },
+          layoutMeasurement: { height: 0, width: 0 },
+        },
+      } as NativeSyntheticEvent<NativeScrollEvent>);
+    },
+    [handleScroll, session.viewAll]
   );
 
+  const scrollHandler = useAnimatedScrollHandler(
+    {
+      onScroll: (event) => {
+        const maxScroll = event.contentSize.height - event.layoutMeasurement.height;
+        scrollProgress.value =
+          maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, event.contentOffset.y / maxScroll));
+        runOnJS(reportScrollSpy)(event.contentOffset.y, event.contentSize.height);
+      },
+    },
+    [reportScrollSpy]
+  );
+
+  const stepKey = useMemo(() => {
+    const parts = [
+      session.viewAll ? 'view-all' : 'step-mode',
+      session.isComplete ? 'complete' : 'active',
+      session.isStreamGenerating ? 'stream' : 'idle',
+    ];
+    if (!session.viewAll && !session.isComplete) {
+      parts.push(String(session.currentStep));
+    }
+    return parts.join(':');
+  }, [session.currentStep, session.isComplete, session.isStreamGenerating, session.viewAll]);
+
   if (!data) return null;
+
+  const isIntroStep = !session.isComplete && !session.viewAll && session.currentStep === 0;
 
   const renderResumen = (interactive = false) => (
     <Pressable
       disabled={!interactive}
       onPress={interactive ? () => session.goToStep(0, true) : undefined}
-      className={interactive ? 'mb-8 pb-8 border-b border-neutral-200 dark:border-white/10' : 'mb-8'}
+      className={interactive ? VIEW_ALL_SECTION_DIVIDER : 'mb-8'}
     >
-      <View className="flex-row items-center gap-2 mb-4">
-        <AppIcon size={20} color="#1A1A1A" />
-        <Text className="text-sm font-bold tracking-widest uppercase text-neutral-900 dark:text-neutral-100">
-          El Nucleo
-        </Text>
+      <View className="flex-row items-center flex-wrap gap-x-3 gap-y-2 mb-4">
+        <View className="flex-row items-center gap-2">
+          <AppIcon size={20} />
+          <Text className="text-sm font-bold tracking-widest uppercase text-neutral-900 dark:text-neutral-100">
+            El Nucleo
+          </Text>
+        </View>
+        {!session.isComplete && totalMinutes !== null ? (
+          <View className="flex-row items-center gap-1.5">
+            <Clock size={16} color="#4338ca" />
+            <Text className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+              ~{totalMinutes} min
+            </Text>
+          </View>
+        ) : null}
       </View>
       <Text className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 leading-9">{data.coreIdea}</Text>
       {data.coreSupport ? (
         <Text className="mt-4 text-lg leading-7 text-neutral-700 dark:text-neutral-400">{data.coreSupport}</Text>
+      ) : null}
+
+      {data.sourceMetadata ? (
+        <SourceMetadataGlassCard sourceMetadata={data.sourceMetadata} coverage={data.coverage} />
       ) : null}
 
       {data.tldr?.length ? (
@@ -90,16 +162,22 @@ export default function ClassicResultScreen() {
     </Pressable>
   );
 
-  const renderStep = (stepIndex: number, interactive = false) => {
+  const renderStep = (stepIndex: number, interactive = false, isLastStep = false) => {
     const step = data.steps[stepIndex - 1];
     if (!step) return null;
+
+    const stepDividerClass = interactive
+      ? isLastStep
+        ? VIEW_ALL_SECTION_BEFORE_COMPLETION
+        : VIEW_ALL_SECTION_DIVIDER
+      : '';
 
     return (
       <Pressable
         key={step.id || stepIndex}
         disabled={!interactive}
         onPress={interactive ? () => session.goToStep(stepIndex, true) : undefined}
-        className={interactive ? 'mb-8 pb-8 border-b border-neutral-200 dark:border-white/10 last:border-0' : ''}
+        className={stepDividerClass}
       >
         <View className="flex-row flex-wrap items-center gap-2 mb-4">
           <Text className="text-sm font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
@@ -131,13 +209,42 @@ export default function ClassicResultScreen() {
         >
           <Text className="font-bold text-neutral-700 dark:text-neutral-300">Repasar desde el inicio</Text>
         </Pressable>
-        <Pressable
-          onPress={session.handleNewMap}
-          className="px-6 py-4 rounded-xl bg-indigo-600 active:bg-indigo-700 flex-row items-center justify-center gap-2"
+        <View className="items-center">
+          <FloatingGlassButton
+            onPress={session.handleNewMap}
+            accessibilityLabel="Nuevo mapa"
+            shape="pill"
+            tone="accent"
+          >
+            <SquarePen size={18} color="#fff" />
+            <Text className="text-[15px] font-bold text-white">Nuevo mapa</Text>
+          </FloatingGlassButton>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderViewAllCompletion = () => (
+    <View className={`items-center ${VIEW_ALL_COMPLETION_SECTION}`}>
+      <View className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/15 items-center justify-center mb-8">
+        <CheckCircle2 size={40} color="#059669" />
+      </View>
+      <Text className="text-3xl font-extrabold text-neutral-900 dark:text-neutral-100 text-center">
+        ¡Lo lograste!
+      </Text>
+      <Text className="mt-4 text-lg text-neutral-600 dark:text-neutral-400 text-center leading-7 px-4">
+        Has completado los {session.totalSteps} pasos de este mapa de acción.
+      </Text>
+      <View className="mt-10 w-full items-center">
+        <FloatingGlassButton
+          onPress={session.handleCompleteMap}
+          accessibilityLabel="Completar mapa"
+          shape="pill"
+          tone="accent"
         >
-          <SquarePen size={20} color="#fff" />
-          <Text className="font-bold text-white">Nuevo mapa</Text>
-        </Pressable>
+          <CheckCircle2 size={18} color="#fff" />
+          <Text className="text-[15px] font-bold text-white">Completar mapa</Text>
+        </FloatingGlassButton>
       </View>
     </View>
   );
@@ -149,40 +256,55 @@ export default function ClassicResultScreen() {
         isComplete={session.isComplete}
         stepProgress={session.stepProgress}
         progressLabel={session.progressLabel}
-        scrollProgress={scrollProgress}
-        onToggleSidebar={() => session.setHistoryOpen(true)}
+        scrollProgressShared={scrollProgress}
+        onToggleSidebar={() => session.toggleHistoryDrawer()}
         onToggleViewMode={session.isComplete ? undefined : session.toggleViewMode}
       />
 
       <View className="flex-1">
-        <ScrollView
+        <Animated.ScrollView
           className="flex-1"
           contentContainerClassName="px-5 py-5 pb-8"
           keyboardShouldPersistTaps="handled"
-          onScroll={onScroll}
+          showsVerticalScrollIndicator={!isIntroStep}
+          scrollEnabled={!session.historyOpen}
+          onLayout={handleScrollViewLayout}
+          onScroll={scrollHandler}
           scrollEventThrottle={16}
         >
-          <View className="mb-4">
+          <View className="mb-12">
             <Text className="text-xs font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
               {data.title}
             </Text>
-            {!session.isComplete && totalMinutes !== null ? (
-              <View className="mt-2 flex-row items-center gap-1.5">
-                <Clock size={16} color="#4338ca" />
-                <Text className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-                  ~{totalMinutes} min
-                </Text>
-              </View>
-            ) : null}
           </View>
 
-          <Animated.View key={stepKey} entering={FadeIn.duration(220)} exiting={FadeOut.duration(180)}>
+          <Animated.View
+            key={stepKey}
+            entering={
+              session.isStreamGenerating || session.viewAll ? undefined : FadeIn.duration(220)
+            }
+            exiting={session.viewAll ? undefined : FadeOut.duration(180)}
+          >
             {session.isComplete ? (
               renderCompletion()
             ) : session.viewAll ? (
               <>
-                {renderResumen(true)}
-                {data.steps.map((_, idx) => renderStep(idx + 1, true))}
+                <View onLayout={(event) => registerSectionLayout(0, event)}>
+                  {renderResumen(true)}
+                </View>
+                {data.steps.map((_, idx) => {
+                  const stepIndex = idx + 1;
+                  const isLastStep = stepIndex === session.totalSteps;
+                  return (
+                    <View
+                      key={data.steps[idx]?.id ?? stepIndex}
+                      onLayout={(event) => registerSectionLayout(stepIndex, event)}
+                    >
+                      {renderStep(stepIndex, true, isLastStep)}
+                    </View>
+                  );
+                })}
+                {renderViewAllCompletion()}
               </>
             ) : session.currentStep === 0 ? (
               renderResumen(false)
@@ -190,52 +312,9 @@ export default function ClassicResultScreen() {
               renderStep(session.currentStep, false)
             )}
           </Animated.View>
-        </ScrollView>
+        </Animated.ScrollView>
 
-        {showStepFooter ? (
-          <SafeAreaView
-            edges={['bottom']}
-            className="border-t border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900"
-          >
-            <View className="px-4 pt-4">
-            {session.currentStep === 0 ? (
-              <Pressable
-                onPress={() => session.goToStep(1)}
-                className="w-full bg-indigo-600 active:bg-indigo-700 py-4 rounded-xl flex-row items-center justify-center gap-2"
-              >
-                <Text className="text-white font-bold text-lg">Empezar a leer</Text>
-                <ArrowRight size={20} color="#fff" />
-              </Pressable>
-            ) : (
-              <View className="flex-row gap-3">
-                <Pressable
-                  onPress={() => session.goToStep(session.currentStep - 1)}
-                  className="flex-1 py-4 rounded-xl border border-neutral-200 dark:border-white/10 items-center justify-center"
-                >
-                  <Text className="font-bold text-neutral-700 dark:text-neutral-300">Atrás</Text>
-                </Pressable>
-                {session.currentStep < session.totalSteps ? (
-                  <Pressable
-                    onPress={() => session.goToStep(session.currentStep + 1)}
-                    className="flex-[2] bg-indigo-600 active:bg-indigo-700 py-4 rounded-xl flex-row items-center justify-center gap-2"
-                  >
-                    <Text className="text-white font-bold text-lg">Siguiente</Text>
-                    <ArrowRight size={20} color="#fff" />
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={session.handleCompleteMap}
-                    className="flex-[2] bg-indigo-600 active:bg-indigo-700 py-4 rounded-xl flex-row items-center justify-center gap-2"
-                  >
-                    <Check size={20} color="#fff" />
-                    <Text className="text-white font-bold text-lg">Finalizar</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
-            </View>
-          </SafeAreaView>
-        ) : null}
+        <StepFooterNav completeLabel="Finalizar" />
       </View>
     </SafeAreaView>
   );

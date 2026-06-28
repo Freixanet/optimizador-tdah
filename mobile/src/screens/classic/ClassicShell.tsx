@@ -10,21 +10,19 @@ export default function ClassicShell() {
     <HistoryDrawer
       open={session.historyOpen}
       entries={session.historyStore.entries}
-      activeId={session.historyStore.activeId}
+      activeId={session.phase === 'result' && session.data ? session.historyStore.activeId : null}
       phase={session.phase}
       data={session.data}
       currentStep={session.currentStep}
       isComplete={session.isComplete}
-      viewAll={session.viewAll}
-      totalSteps={session.totalSteps}
-      onClose={() => session.setHistoryOpen(false)}
-      onOpen={() => session.setHistoryOpen(true)}
+      onClose={() => session.closeHistoryDrawer()}
+      onOpen={() => session.openHistoryDrawer()}
       onSelect={session.handleSelectHistory}
       onDelete={session.handleDeleteHistory}
       onRename={session.handleRenameHistory}
+      onUpdateCategory={session.handleUpdateEntryCategory}
       onTogglePin={session.handlePinHistory}
       onGoToStep={session.goToStep}
-      onToggleViewMode={session.toggleViewMode}
       onNewMap={session.handleNewMap}
     >
       <ClassicPhaseRouter />

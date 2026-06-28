@@ -1,11 +1,24 @@
-import type { SavedSession, SourceType } from './contracts';
+import type { SavedSession, SourceType, MapIntent, ActionMapData } from './contracts';
 export type { SourceType } from './contracts';
+import {
+  deriveMapStatus,
+  FALLBACK_MAP_CATEGORY,
+  normalizeHistoryEntry,
+  normalizeTags,
+  sanitizeUserCategory,
+  type MapStatus,
+} from './categories';
+
+export type { MapStatus } from './categories';
 import { getStorage } from './storage';
 
 export type HistoryEntry = {
   id: string;
   title: string;
   category?: string;
+  tags?: string[];
+  intent?: MapIntent;
+  status?: MapStatus;
   pinned?: boolean;
   pinnedAt?: number;
   createdAt: number;
@@ -134,7 +147,7 @@ export function loadHistory(): HistoryStore {
     const raw = getStorage().getItem(HISTORY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as HistoryStore;
-      const entries = (parsed.entries || []).filter(isValidEntry);
+      const entries = (parsed.entries || []).filter(isValidEntry).map(normalizeHistoryEntry);
       const activeId = resolveActiveId(parsed.activeId, entries);
       return { activeId, entries };
     }
@@ -160,6 +173,20 @@ export function getActiveEntry(store: HistoryStore): HistoryEntry | null {
   return store.entries.find((e) => e.id === store.activeId) ?? null;
 }
 
+function metadataFromSession(
+  session: SavedSession,
+  sourceType: SourceType
+): Pick<HistoryEntry, 'category' | 'tags' | 'intent' | 'status'> {
+  const data = session.data as ActionMapData;
+  const intent =
+    data.intent === 'apply' || data.intent === 'study' ? data.intent : 'understand';
+  const category = sanitizeUserCategory(data.category) ?? FALLBACK_MAP_CATEGORY;
+  const tags = normalizeTags(data.tags);
+  const status = deriveMapStatus(session, intent);
+
+  return { category, tags, intent, status };
+}
+
 export function createEntry(
   store: HistoryStore,
   session: SavedSession,
@@ -168,6 +195,7 @@ export function createEntry(
 ): HistoryStore {
   const now = Date.now();
   const title = (session.data as { title?: string } | undefined)?.title || 'Mapa sin título';
+  const metadata = metadataFromSession(session, sourceType);
   const entry: HistoryEntry = {
     id: providedId || generateId(),
     title,
@@ -175,6 +203,7 @@ export function createEntry(
     updatedAt: now,
     sourceType,
     session,
+    ...metadata,
   };
 
   return {
@@ -193,15 +222,21 @@ export function updateActiveSession(
     if (entry.id !== store.activeId) return entry;
 
     const title = ((session.data as { title?: string } | undefined)?.title || entry.title) as string;
+    const metadata = metadataFromSession(session, entry.sourceType);
     const progressChanged =
       entry.session.currentStep !== session.currentStep ||
       entry.session.isComplete !== session.isComplete ||
       entry.session.viewAll !== session.viewAll;
     const titleChanged = title !== entry.title;
+    const metadataChanged =
+      entry.category !== metadata.category ||
+      entry.status !== metadata.status ||
+      entry.intent !== metadata.intent ||
+      JSON.stringify(entry.tags ?? []) !== JSON.stringify(metadata.tags ?? []);
 
-    if (!progressChanged && !titleChanged) {
+    if (!progressChanged && !titleChanged && !metadataChanged) {
       if (entry.session.data === session.data) return entry;
-      return { ...entry, title, session };
+      return { ...entry, title, session, ...metadata };
     }
 
     const now = Date.now();
@@ -210,6 +245,7 @@ export function updateActiveSession(
       title,
       updatedAt: now,
       session,
+      ...metadata,
     };
   });
 
@@ -247,6 +283,35 @@ export function renameEntry(store: HistoryStore, id: string, title: string): His
         data: {
           ...entry.session.data,
           title: trimmed,
+        },
+      },
+    };
+  });
+
+  return { ...store, entries };
+}
+
+export function updateEntryCategory(
+  store: HistoryStore,
+  id: string,
+  category: string
+): HistoryStore {
+  const trimmed = sanitizeUserCategory(category);
+  if (!trimmed) return store;
+
+  const now = Date.now();
+  const entries = store.entries.map((entry) => {
+    if (entry.id !== id) return entry;
+
+    return {
+      ...entry,
+      category: trimmed,
+      updatedAt: now,
+      session: {
+        ...entry.session,
+        data: {
+          ...entry.session.data,
+          category: trimmed,
         },
       },
     };

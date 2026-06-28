@@ -13,6 +13,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import GlassSurface from './GlassSurface';
 import LiquidGlassSurface from './LiquidGlassSurface';
+import { SIDEBAR_HEADER_BUTTON_SIZE } from './sidebarLayout';
 import { useTheme } from '../context/ThemeContext';
 import type { MapIntent } from '../logic/contracts';
 
@@ -27,9 +28,17 @@ const OPTIONS: Array<{ id: Extract<MapIntent, 'understand' | 'apply'>; label: st
   { id: 'apply', label: 'Aplicar' },
 ];
 
-const PADDING = 4;
-const SEGMENT_HEIGHT = 36;
-const MIN_SEGMENT_WIDTH = 96;
+/** Original shell: 4pt pad ×2 + 36pt segment = 44pt — scale to match sidebar header button. */
+const LEGACY_PAD = 4;
+const LEGACY_SEGMENT = 36;
+const LEGACY_SHELL = LEGACY_SEGMENT + LEGACY_PAD * 2;
+const SHELL_SCALE = SIDEBAR_HEADER_BUTTON_SIZE / LEGACY_SHELL;
+
+const PADDING = LEGACY_PAD * SHELL_SCALE;
+const SEGMENT_HEIGHT = LEGACY_SEGMENT * SHELL_SCALE;
+const MIN_SEGMENT_WIDTH = 96 * SHELL_SCALE;
+const LABEL_FONT_SIZE = 14 * SHELL_SCALE;
+const THUMB_EDGE_INSET = 6 * SHELL_SCALE;
 const SPRING = { damping: 24, stiffness: 360, mass: 0.78 };
 const PRESS_SPRING = { damping: 20, stiffness: 460, mass: 0.62 };
 
@@ -125,7 +134,7 @@ export default function IntentSelector({ value, onChange, disabled = false }: In
 
       const velocityStretch = Math.min(Math.abs(event.velocityX) / 2600, 0.14);
       const edgeStretch =
-        next <= 6 || next >= max - 6 ? 0.06 : 0;
+        next <= THUMB_EDGE_INSET || next >= max - THUMB_EDGE_INSET ? 0.06 : 0;
       thumbStretch.value = 1 + velocityStretch + edgeStretch;
     })
     .onEnd((event) => {
@@ -185,7 +194,12 @@ export default function IntentSelector({ value, onChange, disabled = false }: In
         style={[styles.shell, disabled ? styles.disabled : null]}
         accessibilityRole="tablist"
       >
-        <GlassSurface liquid borderRadius={999} className="rounded-full">
+        <GlassSurface
+          liquid
+          borderRadius={SIDEBAR_HEADER_BUTTON_SIZE / 2}
+          className="rounded-full"
+          style={styles.glass}
+        >
           <View style={styles.pad}>
             <View style={styles.track} onLayout={handleTrackLayout}>
               <Animated.View style={[styles.thumb, thumbStyle]} pointerEvents="none">
@@ -228,10 +242,15 @@ export default function IntentSelector({ value, onChange, disabled = false }: In
 
 const styles = StyleSheet.create({
   shell: {
+    height: SIDEBAR_HEADER_BUTTON_SIZE,
     minWidth: MIN_SEGMENT_WIDTH * OPTIONS.length + PADDING * 2,
+    justifyContent: 'center',
   },
   disabled: {
     opacity: 0.4,
+  },
+  glass: {
+    height: SIDEBAR_HEADER_BUTTON_SIZE,
   },
   pad: {
     padding: PADDING,
@@ -260,7 +279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: {
-    fontSize: 14,
+    fontSize: LABEL_FONT_SIZE,
     fontWeight: '600',
   },
 });

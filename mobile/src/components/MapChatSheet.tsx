@@ -235,7 +235,7 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <GlassSurface liquid borderRadius={0} className="border-b border-neutral-200/60 dark:border-white/10">
+          <GlassSurface liquid borderRadius={0} liquidBorder="bottom">
             <View className="flex-row items-center justify-between px-5 py-4">
               <View className="flex-1 pr-3">
                 <Text className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
@@ -307,7 +307,7 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
           </ScrollView>
 
           <View className="px-5 py-4">
-            <GlassSurface liquid borderRadius={20} className="overflow-hidden">
+            <GlassSurface liquid borderRadius={20} className="rounded-[20px]">
               <View className="flex-row gap-3 items-end px-3 py-3">
                 <TextInput
                   value={chatInput}

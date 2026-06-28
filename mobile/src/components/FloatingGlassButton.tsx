@@ -1,79 +1,168 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from 'react-native-gesture-handler';
+import GlassBarShell, { GLASS_BAR_BUTTON_RADIUS } from './GlassBarShell';
 import GlassSurface from './GlassSurface';
+import { SIDEBAR_HEADER_BUTTON_SIZE } from './sidebarLayout';
 import { useTheme } from '../context/ThemeContext';
 
 type FloatingGlassButtonProps = {
   onPress: () => void;
   accessibilityLabel: string;
   children: React.ReactNode;
-  shape?: 'circle' | 'pill';
+  shape?: 'circle' | 'pill' | 'rounded';
   tone?: 'neutral' | 'accent';
   /** Circle diameter in points. Defaults to {@link FLOATING_CIRCLE_SIZE}. */
   size?: number;
+  /** Smaller pill padding for inline toolbars (e.g. map header). */
+  compact?: boolean;
+  /** Stretch pill/bar to parent width (e.g. completion CTAs). */
+  fullWidth?: boolean;
 };
 
+/** Profile circle diameter and paired bar height (e.g. Nuevo mapa in history). */
 export const FLOATING_CIRCLE_SIZE = 52;
+export const FLOATING_BAR_HEIGHT = FLOATING_CIRCLE_SIZE;
 export const FLOATING_PILL_MIN_HEIGHT = 48;
+/** Capsule ends — avoids rough native glass at borderRadius 9999. */
+export const FLOATING_PILL_RADIUS = FLOATING_PILL_MIN_HEIGHT / 2;
 
 export function FloatingGlassShell({
   children,
   shape = 'pill',
   tone = 'neutral',
   size = FLOATING_CIRCLE_SIZE,
-}: Pick<FloatingGlassButtonProps, 'children' | 'shape' | 'tone' | 'size'>) {
+  compact = false,
+  fullWidth = false,
+  prominent = false,
+}: Pick<FloatingGlassButtonProps, 'children' | 'shape' | 'tone' | 'size' | 'compact' | 'fullWidth'> & {
+  prominent?: boolean;
+}) {
   const { isDark } = useTheme();
   const isAccent = tone === 'accent';
   const isCircle = shape === 'circle';
+  const isRounded = shape === 'rounded';
 
   const circleSizeStyle = {
     width: size,
     height: size,
   };
 
+  const accentTint = isDark ? 'rgba(99, 102, 241, 0.52)' : 'rgba(79, 70, 229, 0.46)';
+  const accentOverlay = isDark ? 'bg-indigo-500/32' : 'bg-indigo-600/28';
+
   if (isAccent) {
+    if (isCircle) {
+      const radius = size / 2;
+      return (
+        <View style={[styles.shadow, styles.accentShadow, circleSizeStyle]}>
+          <GlassSurface
+            liquid
+            liquidBorder="none"
+            borderRadius={radius}
+            style={[styles.circleGlass, { width: size, height: size, borderRadius: radius }]}
+            tintColor={accentTint}
+            overlayClassName={accentOverlay}
+            contentClassName="h-full w-full items-center justify-center"
+          >
+            <View style={styles.circleContent}>{children}</View>
+          </GlassSurface>
+        </View>
+      );
+    }
+
     return (
-      <View
-        style={[
-          styles.shadow,
-          styles.accentShadow,
-          isCircle ? [circleSizeStyle, styles.circleShell] : styles.pillShell,
-          { backgroundColor: isDark ? '#6366f1' : '#4f46e5' },
-        ]}
+      <GlassBarShell
+        style={[styles.accentBar, fullWidth ? styles.fullWidth : null]}
+        tintColor={accentTint}
+        overlayClassName={accentOverlay}
+        contentClassName="h-full w-full items-center justify-center"
       >
-        <View style={isCircle ? styles.circleContent : styles.pillContent}>{children}</View>
-      </View>
+        <View
+          style={[
+            compact ? styles.pillContentAccentCompact : styles.pillContentAccent,
+            fullWidth ? styles.fullWidth : null,
+          ]}
+        >
+          {children}
+        </View>
+      </GlassBarShell>
     );
   }
 
   if (isCircle) {
+    const radius = size / 2;
+    const strokeColor = prominent
+      ? isDark
+        ? 'rgba(255,255,255,0.18)'
+        : 'rgba(0,0,0,0.10)'
+      : isDark
+        ? 'rgba(255,255,255,0.12)'
+        : 'rgba(0,0,0,0.07)';
+    const circleGlass = (
+      <GlassSurface
+        liquid
+        liquidBorder="none"
+        liquidMaterial={prominent ? 'regular' : 'clear'}
+        glassInset={prominent ? 0 : 1}
+        borderRadius={radius}
+        style={[styles.circleGlass, { width: size, height: size, borderRadius: radius }]}
+        overlayClassName={
+          prominent
+            ? isDark
+              ? 'bg-white/12'
+              : 'bg-white/68'
+            : isDark
+              ? 'bg-white/[0.05]'
+              : 'bg-white/40'
+        }
+        tintColor={
+          prominent
+            ? isDark
+              ? 'rgba(64, 64, 64, 0.48)'
+              : 'rgba(245, 245, 245, 0.72)'
+            : undefined
+        }
+        perimeterStrokeColor={strokeColor}
+        perimeterRingDiameter={size}
+        contentClassName="h-full w-full items-center justify-center"
+      >
+        <View style={styles.circleContent}>{children}</View>
+      </GlassSurface>
+    );
+
+    if (size <= SIDEBAR_HEADER_BUTTON_SIZE) {
+      return circleGlass;
+    }
+
     return (
-      <View style={[styles.shadow, circleSizeStyle]}>
-        <GlassSurface
-          liquid
-          borderRadius={size / 2}
-          className={`h-full w-full overflow-hidden rounded-full border ${
-            isDark ? 'border-white/10' : 'border-white/60'
-          }`}
-          contentClassName="h-full w-full items-center justify-center"
-        >
-          <View style={styles.circleContent}>{children}</View>
-        </GlassSurface>
+      <View style={[styles.shadow, prominent ? styles.shadowProminent : null, circleSizeStyle]}>
+        {circleGlass}
       </View>
     );
   }
 
+  if (isRounded) {
+    return (
+      <GlassBarShell>
+        <View style={styles.barContent}>{children}</View>
+      </GlassBarShell>
+    );
+  }
+
+  const strokeColor = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)';
+
   return (
-    <View style={styles.shadow}>
+    <View style={[styles.shadow, compact ? styles.shadowCompact : null]}>
       <GlassSurface
         liquid
-        borderRadius={9999}
-        className={`overflow-hidden rounded-full border ${
-          isDark ? 'border-white/10' : 'border-white/60'
-        }`}
-        contentClassName="items-center justify-center"
+        liquidBorder="none"
+        borderRadius={FLOATING_PILL_RADIUS}
+        style={styles.neutralPill}
+        perimeterStrokeColor={strokeColor}
+        contentClassName="h-full w-full items-center justify-center"
       >
-        <View style={styles.pillContent}>{children}</View>
+        <View style={compact ? styles.pillContentCompact : styles.pillContent}>{children}</View>
       </GlassSurface>
     </View>
   );
@@ -86,15 +175,23 @@ export default function FloatingGlassButton({
   shape = 'pill',
   tone = 'neutral',
   size = FLOATING_CIRCLE_SIZE,
+  compact = false,
+  fullWidth = false,
 }: FloatingGlassButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [pressed ? styles.pressed : null]}
+      style={({ pressed }) => [fullWidth ? styles.fullWidth : null, pressed ? styles.pressed : null]}
     >
-      <FloatingGlassShell shape={shape} tone={tone} size={size}>
+      <FloatingGlassShell
+        shape={shape}
+        tone={tone}
+        size={size}
+        compact={compact}
+        fullWidth={fullWidth}
+      >
         {children}
       </FloatingGlassShell>
     </Pressable>
@@ -109,14 +206,27 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 8,
   },
+  shadowCompact: {
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
   pressed: {
     opacity: 0.82,
     transform: [{ scale: 0.97 }],
   },
   accentShadow: {
     shadowColor: '#4f46e5',
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  shadowProminent: {
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 10,
   },
   circleShell: {
     alignItems: 'center',
@@ -126,21 +236,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pillShell: {
-    minHeight: FLOATING_PILL_MIN_HEIGHT,
-    borderRadius: 9999,
+  circleGlass: {
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(129, 140, 248, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  },
+  fullWidth: {
+    width: '100%',
+  },
+  accentBar: {
+    height: FLOATING_BAR_HEIGHT,
+    borderRadius: GLASS_BAR_BUTTON_RADIUS,
+    overflow: 'hidden',
+  },
+  neutralPill: {
+    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    borderRadius: FLOATING_PILL_RADIUS,
+    overflow: 'hidden',
   },
   pillContent: {
+    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  pillContentCompact: {
+    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  pillContentAccent: {
+    height: FLOATING_BAR_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+  },
+  pillContentAccentCompact: {
+    height: FLOATING_BAR_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  barContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 });

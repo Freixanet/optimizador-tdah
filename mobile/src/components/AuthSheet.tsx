@@ -18,6 +18,7 @@ import { signInWithPassword,
   signUpWithPassword,
 } from '../logic/cloudHistory';
 import GlassSurface from './GlassSurface';
+import { useAppSession } from '../context/AppSessionContext';
 import { useTheme } from '../context/ThemeContext';
 
 type AuthSheetProps = {
@@ -37,6 +38,7 @@ function authErrorMessage(err: unknown): string {
 }
 
 export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProps) {
+  const session = useAppSession();
   const { isDark } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -77,7 +79,12 @@ export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProp
     setBusy(true);
     try {
       const ok = await signInWithProvider(provider);
-      if (ok) onClose();
+      if (ok) {
+        onClose();
+      } else {
+        setError('Acceso cancelado.');
+        session.setError('Acceso cancelado.');
+      }
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {
@@ -106,7 +113,7 @@ export default function AuthSheet({ visible, userEmail, onClose }: AuthSheetProp
       onRequestClose={onClose}
     >
       <SafeAreaView className="flex-1 bg-neutral-50 dark:bg-neutral-900">
-        <GlassSurface liquid borderRadius={0} className="border-b border-neutral-200/60 dark:border-white/10">
+        <GlassSurface liquid borderRadius={0} liquidBorder="bottom">
           <View className="flex-row items-center justify-between px-5 py-4">
             <Text className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
               {isSignedIn ? 'Tu cuenta' : 'Sincroniza tu historial'}

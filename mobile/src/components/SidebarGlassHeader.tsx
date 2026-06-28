@@ -1,6 +1,11 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Search, X } from 'lucide-react-native';
+import EngravedNucleoMark, { ENGRAVED_NUCLEO_COMPACT_FONT_SIZE } from './EngravedNucleoMark';
 import AppIcon from './AppIcon';
+import FloatingGlassButton from './FloatingGlassButton';
+import GlassSurface from './GlassSurface';
+import { useGlassAccessibility } from '../hooks/useGlassAccessibility';
 
 /** Mirrors web CSS vars on .mobile-sidebar */
 export const SIDEBAR_OCCLUSION = {
@@ -12,6 +17,10 @@ export const SIDEBAR_OCCLUSION = {
 } as const;
 
 export const SIDEBAR_BRAND_ROW_HEIGHT = 56;
+import { SIDEBAR_HEADER_BUTTON_SIZE } from './sidebarLayout';
+
+/** @deprecated Use SIDEBAR_HEADER_BUTTON_SIZE */
+export const SIDEBAR_SEARCH_BUTTON_SIZE = SIDEBAR_HEADER_BUTTON_SIZE;
 
 export function sidebarHeaderSolidHeight(insetTop: number) {
   return insetTop + SIDEBAR_OCCLUSION.headerBelowSafeArea;
@@ -36,6 +45,11 @@ type SidebarBrandHeaderProps = {
   backgroundColor: string;
   isDark: boolean;
   onPress: () => void;
+  searchActive?: boolean;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  onSearchOpen?: () => void;
+  onSearchClose?: () => void;
 };
 
 export function SidebarBrandHeader({
@@ -44,7 +58,32 @@ export function SidebarBrandHeader({
   backgroundColor,
   isDark,
   onPress,
+  searchActive = false,
+  searchQuery = '',
+  onSearchQueryChange,
+  onSearchOpen,
+  onSearchClose,
 }: SidebarBrandHeaderProps) {
+  const searchRef = useRef<TextInput>(null);
+  const { reduceMotion } = useGlassAccessibility();
+  const iconColor = isDark ? '#d4d4d4' : '#525252';
+  const placeholderColor = isDark ? '#737373' : '#a3a3a3';
+  const inputColor = isDark ? '#f5f5f5' : '#171717';
+
+  const focusSearch = useCallback(() => {
+    searchRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!searchActive) return;
+    if (reduceMotion) {
+      focusSearch();
+      return;
+    }
+    const timer = setTimeout(focusSearch, 80);
+    return () => clearTimeout(timer);
+  }, [focusSearch, reduceMotion, searchActive]);
+
   return (
     <View
       pointerEvents="box-none"
@@ -52,17 +91,70 @@ export function SidebarBrandHeader({
       collapsable={false}
     >
       <View style={[styles.brandShell, { paddingTop: insetTop + 10 }]}>
-        <Pressable
-          onPress={onPress}
-          style={styles.brandPressable}
-          accessibilityRole="button"
-          accessibilityLabel="Ir a inicio"
-        >
-          <AppIcon size={32} color={isDark ? '#EDEDED' : '#1A1A1A'} />
-          <Text style={[styles.brandLabel, isDark ? styles.brandLabelDark : styles.brandLabelLight]}>
-            Nucleo
-          </Text>
-        </Pressable>
+        <View style={[styles.brandRow, { height: SIDEBAR_HEADER_BUTTON_SIZE }]}>
+          {!searchActive ? (
+            <Pressable
+              onPress={onPress}
+              style={[styles.brandPressable, { height: SIDEBAR_HEADER_BUTTON_SIZE }]}
+              accessibilityRole="button"
+              accessibilityLabel="Ir a inicio"
+            >
+              <View style={[styles.brandMark, { height: SIDEBAR_HEADER_BUTTON_SIZE }]}>
+                <AppIcon size={28} color={isDark ? '#ffffff' : undefined} />
+                <EngravedNucleoMark
+                  fontSize={ENGRAVED_NUCLEO_COMPACT_FONT_SIZE}
+                  tone={isDark ? 'sidebar' : 'hero'}
+                  rowHeight={SIDEBAR_HEADER_BUTTON_SIZE}
+                />
+              </View>
+            </Pressable>
+          ) : (
+            <View style={styles.searchPill}>
+              <GlassSurface
+                liquid
+                borderRadius={18}
+                style={styles.searchGlass}
+                className="rounded-full flex-1"
+                contentClassName="flex-1 flex-row items-center px-3 gap-2"
+              >
+                <Search size={16} color={iconColor} strokeWidth={2.25} />
+                <TextInput
+                  ref={searchRef}
+                  value={searchQuery}
+                  onChangeText={onSearchQueryChange}
+                  placeholder="Buscar mapas y contenido…"
+                  placeholderTextColor={placeholderColor}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                  style={[styles.searchInput, { color: inputColor }]}
+                  accessibilityLabel="Buscar en el historial"
+                />
+              </GlassSurface>
+            </View>
+          )}
+
+          {searchActive ? (
+            <FloatingGlassButton
+              onPress={() => onSearchClose?.()}
+              accessibilityLabel="Cerrar búsqueda"
+              shape="circle"
+              size={SIDEBAR_HEADER_BUTTON_SIZE}
+            >
+              <X size={17} color={iconColor} strokeWidth={2.25} />
+            </FloatingGlassButton>
+          ) : (
+            <FloatingGlassButton
+              onPress={() => onSearchOpen?.()}
+              accessibilityLabel="Buscar en el historial"
+              shape="circle"
+              size={SIDEBAR_HEADER_BUTTON_SIZE}
+            >
+              <Search size={17} color={iconColor} strokeWidth={2.25} />
+            </FloatingGlassButton>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -82,20 +174,35 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingBottom: 0,
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   brandPressable: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  brandMark: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  brandLabel: {
-    fontSize: 20,
-    fontWeight: '600',
-    letterSpacing: -0.3,
+  searchPill: {
+    flex: 1,
+    height: SIDEBAR_HEADER_BUTTON_SIZE,
+    minWidth: 0,
   },
-  brandLabelLight: {
-    color: '#171717',
+  searchGlass: {
+    flex: 1,
+    height: SIDEBAR_HEADER_BUTTON_SIZE,
   },
-  brandLabelDark: {
-    color: '#f5f5f5',
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 0,
+    height: SIDEBAR_HEADER_BUTTON_SIZE,
   },
 });

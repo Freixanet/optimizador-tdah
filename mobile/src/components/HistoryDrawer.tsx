@@ -1,28 +1,31 @@
-import React, { useEffect } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   Extrapolation,
   interpolate,
   runOnJS,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import HistorySheet from './HistorySheet';
+import { SidebarBrandHeader, sidebarHeaderSolidHeight } from './SidebarGlassHeader';
+import { APP_DARK_BACKGROUND } from '@shared/uiTokens';
 import { useTheme } from '../context/ThemeContext';
+import { DRAWER_WIDTH, MAIN_SHEET_CORNER_RADIUS, SCREEN_WIDTH } from './sidebarLayout';
 import type { ActionMapData } from '../logic/contracts';
 import type { HistoryEntry } from '../logic/history';
 import type { AppPhase } from '../context/AppSessionContext';
 
-export const DRAWER_WIDTH = Math.min(Dimensions.get('window').width * 0.76, 340);
+export { DRAWER_WIDTH, MAIN_SHEET_CORNER_RADIUS } from './sidebarLayout';
 
-const SCREEN = Dimensions.get('window');
-/** Radio de esquina izquierda ~ proporción del display en iPhone moderno. */
-export const MAIN_SHEET_CORNER_RADIUS = Math.round(
-  Math.min(Math.max(Math.min(SCREEN.width, SCREEN.height) * 0.138, 52), 62)
-);
+const SPRING = { damping: 26, stiffness: 280 } as const;
+const SEARCH_TIMING = { duration: 320, easing: Easing.out(Easing.cubic) } as const;
 
 type HistoryDrawerProps = {
   open: boolean;
@@ -32,24 +35,18 @@ type HistoryDrawerProps = {
   data: ActionMapData | null;
   currentStep: number;
   isComplete: boolean;
-  viewAll: boolean;
-  totalSteps: number;
   onClose: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onUpdateCategory: (id: string, category: string) => void;
   onTogglePin: (id: string) => void;
   onOpen: () => void;
   onGoToStep: (idx: number) => void;
-  onToggleViewMode: () => void;
   onNewMap: () => void;
   enableEdgeSwipe?: boolean;
   children: React.ReactNode;
 };
-
-function triggerOpenHaptic() {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-}
 
 export default function HistoryDrawer({
   open,
@@ -59,30 +56,63 @@ export default function HistoryDrawer({
   data,
   currentStep,
   isComplete,
-  viewAll,
-  totalSteps,
   onClose,
   onSelect,
   onDelete,
   onRename,
+  onUpdateCategory,
   onTogglePin,
   onOpen,
   onGoToStep,
-  onToggleViewMode,
   onNewMap,
   enableEdgeSwipe = true,
   children,
 }: HistoryDrawerProps) {
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const offsetX = useSharedValue(open ? DRAWER_WIDTH : 0);
+  const sidebarClipWidth = useSharedValue(DRAWER_WIDTH);
   const openShared = useSharedValue(open);
+  const searchActiveShared = useSharedValue(false);
   const dragStartX = useSharedValue(0);
+
+  const drawerMaxWidth = useDerivedValue(() =>
+    searchActiveShared.value ? SCREEN_WIDTH : DRAWER_WIDTH
+  );
+
+  const headerSolidHeight = sidebarHeaderSolidHeight(insets.top);
+  const sidebarCanvasColor = isDark ? APP_DARK_BACKGROUND : '#f0f0f0';
+
+  useEffect(() => {
+    searchActiveShared.value = searchActive;
+  }, [searchActive, searchActiveShared]);
 
   useEffect(() => {
     openShared.value = open;
-    offsetX.value = withSpring(open ? DRAWER_WIDTH : 0, { damping: 26, stiffness: 280 });
-    if (open) triggerOpenHaptic();
-  }, [open, offsetX, openShared]);
+    if (!open) {
+      setSearchActive(false);
+      setSearchQuery('');
+      offsetX.value = withSpring(0, SPRING);
+      sidebarClipWidth.value = DRAWER_WIDTH;
+      return;
+    }
+
+    if (searchActive) {
+      offsetX.value = withTiming(SCREEN_WIDTH, SEARCH_TIMING);
+      sidebarClipWidth.value = withTiming(SCREEN_WIDTH, SEARCH_TIMING);
+      return;
+    }
+
+    offsetX.value = withSpring(DRAWER_WIDTH, SPRING);
+    sidebarClipWidth.value = DRAWER_WIDTH;
+  }, [offsetX, open, openShared, searchActive, sidebarClipWidth]);
+
+  const closeSearch = () => {
+    setSearchActive(false);
+    setSearchQuery('');
+  };
 
   const panGesture = Gesture.Pan()
     .activeOffsetX([-12, 12])
@@ -91,37 +121,42 @@ export default function HistoryDrawer({
       dragStartX.value = offsetX.value;
     })
     .onUpdate((event) => {
+      const maxW = drawerMaxWidth.value;
       const next = dragStartX.value + event.translationX;
-      offsetX.value = Math.max(0, Math.min(DRAWER_WIDTH, next));
+      offsetX.value = Math.max(0, Math.min(maxW, next));
+      if (searchActiveShared.value) {
+        sidebarClipWidth.value = offsetX.value;
+      }
     })
     .onEnd((event) => {
+      const maxW = drawerMaxWidth.value;
       const current = offsetX.value;
-      const opening = dragStartX.value < DRAWER_WIDTH * 0.5;
+      const opening = dragStartX.value < maxW * 0.5;
       const velocity = event.velocityX;
 
       if (opening) {
-        const shouldOpen = current > DRAWER_WIDTH * 0.35 || velocity > 650;
-        offsetX.value = withSpring(shouldOpen ? DRAWER_WIDTH : 0, { damping: 26, stiffness: 280 });
+        const shouldOpen = current > maxW * 0.35 || velocity > 650;
+        const target = shouldOpen ? maxW : 0;
+        offsetX.value = withSpring(target, SPRING);
+        if (searchActiveShared.value) {
+          sidebarClipWidth.value = target;
+        }
         if (shouldOpen && !openShared.value) runOnJS(onOpen)();
         if (!shouldOpen && openShared.value) runOnJS(onClose)();
         return;
       }
 
-      const shouldClose = current < DRAWER_WIDTH * 0.65 || velocity < -650;
-      offsetX.value = withSpring(shouldClose ? 0 : DRAWER_WIDTH, { damping: 26, stiffness: 280 });
+      const shouldClose = current < maxW * 0.65 || velocity < -650;
+      const target = shouldClose ? 0 : maxW;
+      offsetX.value = withSpring(target, SPRING);
+      if (searchActiveShared.value) {
+        sidebarClipWidth.value = target;
+      }
       if (shouldClose && openShared.value) runOnJS(onClose)();
       if (!shouldClose && !openShared.value) runOnJS(onOpen)();
     });
 
-  const tapGesture = Gesture.Tap()
-    .maxDistance(12)
-    .onEnd(() => {
-      if (!openShared.value) return;
-      offsetX.value = withSpring(0, { damping: 26, stiffness: 280 });
-      runOnJS(onClose)();
-    });
-
-  const mainGesture = Gesture.Exclusive(panGesture, tapGesture);
+  const mainGesture = panGesture;
 
   const edgeOpenGesture = Gesture.Pan()
     .activeOffsetX(12)
@@ -130,14 +165,19 @@ export default function HistoryDrawer({
     })
     .onEnd((event) => {
       const shouldOpen = offsetX.value > DRAWER_WIDTH * 0.35 || event.velocityX > 650;
-      offsetX.value = withSpring(shouldOpen ? DRAWER_WIDTH : 0, { damping: 26, stiffness: 280 });
+      offsetX.value = withSpring(shouldOpen ? DRAWER_WIDTH : 0, SPRING);
       if (shouldOpen) {
         runOnJS(onOpen)();
       }
     });
 
+  const sidebarClipStyle = useAnimatedStyle(() => ({
+    width: searchActiveShared.value ? sidebarClipWidth.value : DRAWER_WIDTH,
+  }));
+
   const mainSheetStyle = useAnimatedStyle(() => {
-    const progress = offsetX.value / DRAWER_WIDTH;
+    const maxW = Math.max(drawerMaxWidth.value, 1);
+    const progress = offsetX.value / maxW;
     const radius = offsetX.value > 0 ? MAIN_SHEET_CORNER_RADIUS : 0;
     const shadowOpacity = interpolate(progress, [0, 1], [0, isDark ? 0.55 : 0.22], Extrapolation.CLAMP);
 
@@ -156,7 +196,8 @@ export default function HistoryDrawer({
   });
 
   const mainLightenOverlayStyle = useAnimatedStyle(() => {
-    const progress = offsetX.value / DRAWER_WIDTH;
+    const maxW = Math.max(drawerMaxWidth.value, 1);
+    const progress = offsetX.value / maxW;
     const opacity = interpolate(
       progress,
       [0, 1],
@@ -168,12 +209,15 @@ export default function HistoryDrawer({
   });
 
   const underlayStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(offsetX.value, [0, DRAWER_WIDTH], [0, 1], Extrapolation.CLAMP),
+    opacity: interpolate(
+      offsetX.value,
+      [0, Math.max(drawerMaxWidth.value, 1)],
+      [0, 1],
+      Extrapolation.CLAMP
+    ),
   }));
 
-  const canvasColor = isDark ? '#171717' : '#fafafa';
-  /** Sidebar stays on base canvas; root uses a slightly deeper gray when drawer is active. */
-  const sidebarCanvasColor = isDark ? '#171717' : '#f0f0f0';
+  const canvasColor = isDark ? APP_DARK_BACKGROUND : '#fafafa';
 
   return (
     <View
@@ -190,29 +234,52 @@ export default function HistoryDrawer({
         ]}
       />
 
-      <View style={[styles.sidebar, { width: DRAWER_WIDTH, backgroundColor: sidebarCanvasColor }]}>
-        <HistorySheet
-          visible
-          embedded
-          canvasColor={sidebarCanvasColor}
-          entries={entries}
-          activeId={activeId}
-          onClose={onClose}
-          onSelect={onSelect}
-          onDelete={onDelete}
-          onRename={onRename}
-          onTogglePin={onTogglePin}
-          showIndex={phase === 'result' && Boolean(data)}
-          data={data}
-          currentStep={currentStep}
-          isComplete={isComplete}
-          viewAll={viewAll}
-          totalSteps={totalSteps}
-          onGoToStep={onGoToStep}
-          onToggleViewMode={onToggleViewMode}
-          onNewMap={onNewMap}
+      <Animated.View
+        style={[styles.sidebar, sidebarClipStyle, { backgroundColor: sidebarCanvasColor }]}
+      >
+        <SidebarBrandHeader
+          height={headerSolidHeight}
+          insetTop={insets.top}
+          backgroundColor={sidebarCanvasColor}
+          isDark={isDark}
+          onPress={() => {
+            onNewMap();
+            onClose();
+          }}
+          searchActive={searchActive}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchOpen={() => setSearchActive(true)}
+          onSearchClose={closeSearch}
         />
-      </View>
+        <View style={[styles.sidebarBody, { width: DRAWER_WIDTH }]}>
+          <HistorySheet
+            visible
+            embedded
+            hideBrandHeader
+            canvasColor={sidebarCanvasColor}
+            entries={entries}
+            activeId={activeId}
+            onClose={onClose}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onRename={onRename}
+            onUpdateCategory={onUpdateCategory}
+            onTogglePin={onTogglePin}
+            showIndex={phase === 'result' && Boolean(data)}
+            data={data}
+            currentStep={currentStep}
+            isComplete={isComplete}
+            onGoToStep={onGoToStep}
+            onNewMap={onNewMap}
+            searchActive={searchActive}
+            searchQuery={searchQuery}
+            onSearchOpen={() => setSearchActive(true)}
+            onSearchClose={closeSearch}
+            onSearchQueryChange={setSearchQuery}
+          />
+        </View>
+      </Animated.View>
 
       <GestureDetector gesture={mainGesture}>
         <Animated.View
@@ -250,6 +317,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 1,
     overflow: 'hidden',
+  },
+  sidebarBody: {
+    flex: 1,
+    height: '100%',
   },
   mainSheet: {
     ...StyleSheet.absoluteFill,

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -15,8 +15,7 @@ import HistoryEntryGlassMenu, { type HistoryEntryActionAnchor } from './HistoryE
 import {
   CheckCircle2,
   ChevronDown,
-  Layers,
-  List,
+  ChevronRight,
   SquarePen,
 } from 'lucide-react-native';
 import ProfileMenu from './ProfileMenu';
@@ -26,11 +25,16 @@ import {
   sidebarHeaderSolidHeight,
   sidebarListPaddingTop,
 } from './SidebarGlassHeader';
+import { APP_DARK_BACKGROUND } from '@shared/uiTokens';
 import { useTheme } from '../context/ThemeContext';
 import {
   sortPinnedEntries,
   type HistoryEntry,
 } from '../logic/history';
+import { filterHistoryByCategory, filterHistoryEntries } from '../logic/historySearch';
+import HistoryCategoryFilter from './HistoryCategoryFilter';
+import CategoryEditSheet from './CategoryEditSheet';
+import { collectUsedCategories, collectUserCategories } from '@shared/categories';
 import type { ActionMapData } from '../logic/contracts';
 
 type HistorySheetProps = {
@@ -41,6 +45,7 @@ type HistorySheetProps = {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onUpdateCategory: (id: string, category: string) => void;
   onTogglePin: (id: string) => void;
   embedded?: boolean;
   canvasColor?: string;
@@ -49,11 +54,15 @@ type HistorySheetProps = {
   data?: ActionMapData | null;
   currentStep?: number;
   isComplete?: boolean;
-  viewAll?: boolean;
-  totalSteps?: number;
   onGoToStep?: (idx: number) => void;
-  onToggleViewMode?: () => void;
   onNewMap?: () => void;
+  searchActive?: boolean;
+  searchQuery?: string;
+  onSearchOpen?: () => void;
+  onSearchClose?: () => void;
+  onSearchQueryChange?: (value: string) => void;
+  /** Header is rendered by HistoryDrawer at clip level when embedded in drawer. */
+  hideBrandHeader?: boolean;
 };
 
 type ActionMenuState = HistoryEntryActionAnchor | null;
@@ -66,6 +75,7 @@ export default function HistorySheet({
   onSelect,
   onDelete,
   onRename,
+  onUpdateCategory,
   onTogglePin,
   embedded = false,
   canvasColor,
@@ -73,28 +83,59 @@ export default function HistorySheet({
   data,
   currentStep = 0,
   isComplete = false,
-  viewAll = false,
-  totalSteps = 0,
   onGoToStep,
-  onToggleViewMode,
   onNewMap,
+  searchActive = false,
+  searchQuery = '',
+  onSearchOpen,
+  onSearchClose,
+  onSearchQueryChange,
+  hideBrandHeader = false,
 }: HistorySheetProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [categoryEditEntry, setCategoryEditEntry] = useState<HistoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [actionMenu, setActionMenu] = useState<ActionMenuState>(null);
   const [indexExpanded, setIndexExpanded] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const floatingActionsBottom = Math.max(insets.bottom, 12);
   const listBottomInset = floatingActionsBottom + FLOATING_PILL_MIN_HEIGHT + 20;
   const { isDark } = useTheme();
 
+  const usedCategories = useMemo(() => collectUsedCategories(entries), [entries]);
+  const userCategories = useMemo(() => collectUserCategories(entries), [entries]);
+
+  useEffect(() => {
+    if (!searchActive) {
+      setCategoryFilter(null);
+    }
+  }, [searchActive]);
+
+  useEffect(() => {
+    if (
+      categoryFilter &&
+      !usedCategories.some(
+        (category) => category.toLowerCase() === categoryFilter.toLowerCase()
+      )
+    ) {
+      setCategoryFilter(null);
+    }
+  }, [categoryFilter, usedCategories]);
+
+  const filteredEntries = useMemo(() => {
+    if (!searchActive) return entries;
+    const searched = filterHistoryEntries(entries, searchQuery);
+    return filterHistoryByCategory(searched, categoryFilter);
+  }, [categoryFilter, entries, searchActive, searchQuery]);
+
   const pinnedEntries = useMemo(
-    () => sortPinnedEntries(entries.filter((entry) => entry.pinned)),
-    [entries]
+    () => sortPinnedEntries(filteredEntries.filter((entry) => entry.pinned)),
+    [filteredEntries]
   );
   const regularEntries = useMemo(
-    () => entries.filter((entry) => !entry.pinned),
-    [entries]
+    () => filteredEntries.filter((entry) => !entry.pinned),
+    [filteredEntries]
   );
   const listData = useMemo(
     () => [
@@ -104,6 +145,20 @@ export default function HistorySheet({
       ...regularEntries.map((entry) => ({ type: 'entry' as const, entry })),
     ],
     [pinnedEntries, regularEntries]
+  );
+
+  const openCategoryEditor = useCallback((entry: HistoryEntry) => {
+    setCategoryEditEntry(entry);
+    setActionMenu(null);
+  }, []);
+
+  const handleSaveCategory = useCallback(
+    (category: string) => {
+      if (!categoryEditEntry) return;
+      onUpdateCategory(categoryEditEntry.id, category);
+      setCategoryEditEntry(null);
+    },
+    [categoryEditEntry, onUpdateCategory]
   );
 
   const startRename = useCallback((entry: HistoryEntry) => {
@@ -149,10 +204,13 @@ export default function HistorySheet({
     ({ item }: { item: (typeof listData)[number] }) => {
       if (item.type === 'header') {
         const isRecentHeader = item.id === 'recent-header';
+        const isPinnedHeader = item.id === 'pinned-header';
+        const pinTopPadding =
+          isPinnedHeader && showIndex && data && !searchActive ? 'pt-8' : isPinnedHeader ? 'pt-1' : 'pt-1';
         return (
           <Text
             className={`px-1 pb-2 text-[11px] font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400 ${
-              isRecentHeader ? 'pt-8' : 'pt-1'
+              isRecentHeader ? 'pt-8' : pinTopPadding
             }`}
           >
             {item.title}
@@ -176,24 +234,41 @@ export default function HistorySheet({
         />
       );
     },
-    [activeId, commitRename, onSelect, openEntryMenu, renameValue, renamingId]
+    [activeId, commitRename, data, onSelect, openEntryMenu, renameValue, renamingId, searchActive, showIndex]
   );
 
   const listHeaderComponent = useMemo(() => {
-    if (!showIndex || !data) return null;
+    if (searchActive) {
+      if (usedCategories.length === 0) return null;
+      return (
+        <View className="pb-2 pt-1">
+          <HistoryCategoryFilter
+            selectedCategory={categoryFilter}
+            categories={usedCategories}
+            onSelect={setCategoryFilter}
+          />
+        </View>
+      );
+    }
+
+    if (!showIndex || !data) {
+      return null;
+    }
 
     return (
-      <View className="mb-2">
+      <View className="mb-6">
         <Pressable
           onPress={() => setIndexExpanded((value) => !value)}
           className="flex-row items-center gap-2 mb-3 px-1 py-1"
           accessibilityState={{ expanded: indexExpanded }}
         >
-          <ChevronDown
-            size={16}
-            color="#a3a3a3"
-            style={{ transform: [{ rotate: indexExpanded ? '0deg' : '-90deg' }] }}
-          />
+          <View style={styles.indexChevronSlot}>
+            {indexExpanded ? (
+              <ChevronDown size={16} color="#a3a3a3" />
+            ) : (
+              <ChevronRight size={16} color="#a3a3a3" />
+            )}
+          </View>
           <Text className="text-xs font-bold tracking-widest uppercase text-neutral-400">Índice</Text>
         </Pressable>
 
@@ -255,55 +330,49 @@ export default function HistorySheet({
                 </Pressable>
               );
             })}
-
-            {!isComplete && onToggleViewMode ? (
-              <Pressable
-                onPress={onToggleViewMode}
-                className={`mt-3 flex-row items-center justify-center gap-2 px-3 py-2.5 rounded-xl ${
-                  viewAll ? 'bg-indigo-100 dark:bg-indigo-500/10' : 'bg-white/60 dark:bg-neutral-800/60'
-                }`}
-              >
-                {viewAll ? <List size={16} color="#4f46e5" /> : <Layers size={16} color="#737373" />}
-                <Text
-                  className={`text-sm font-semibold ${
-                    viewAll ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-600 dark:text-neutral-300'
-                  }`}
-                >
-                  {viewAll ? 'Paso a paso' : 'Vista completa'}
-                </Text>
-              </Pressable>
-            ) : null}
           </View>
         ) : null}
       </View>
     );
   }, [
+    categoryFilter,
     currentStep,
     data,
     indexExpanded,
     isComplete,
     onClose,
     onGoToStep,
-    onToggleViewMode,
     showIndex,
-    viewAll,
+    searchActive,
+    usedCategories,
   ]);
 
-  const listEmptyComponent = useMemo(
-    () => (
+  const listEmptyComponent = useMemo(() => {
+    if (searchActive && (searchQuery.trim() || categoryFilter)) {
+      return (
+        <View className="py-8 px-2">
+          <Text className="text-center text-neutral-600 dark:text-neutral-300 leading-6">
+            {searchQuery.trim()
+              ? `No hay resultados para «${searchQuery.trim()}».`
+              : 'No hay mapas en esta categoría.'}
+          </Text>
+        </View>
+      );
+    }
+
+    return (
       <View className="py-8 px-2">
         <Text className="text-center text-neutral-600 dark:text-neutral-300 leading-6">
           Aún no hay mapas guardados. Genera una lectura y aparecerá aquí.
         </Text>
       </View>
-    ),
-    []
-  );
+    );
+  }, [categoryFilter, searchActive, searchQuery]);
 
   const headerSolidHeight = sidebarHeaderSolidHeight(insets.top);
   const listTopInset = sidebarListPaddingTop(insets.top);
   const listBottomPadding = Math.max(SIDEBAR_OCCLUSION.listBottomMin, listBottomInset);
-  const sheetBackground = canvasColor ?? (isDark ? '#171717' : '#f0f0f0');
+  const sheetBackground = canvasColor ?? (isDark ? APP_DARK_BACKGROUND : '#f0f0f0');
 
   const content = (
     <View
@@ -325,16 +394,23 @@ export default function HistorySheet({
           style={styles.list}
           showsVerticalScrollIndicator={false}
         />
-        <SidebarBrandHeader
-          height={headerSolidHeight}
-          insetTop={insets.top}
-          backgroundColor={sheetBackground}
-          isDark={isDark}
-          onPress={() => {
-            onNewMap?.();
-            onClose();
-          }}
-        />
+        {!hideBrandHeader ? (
+          <SidebarBrandHeader
+            height={headerSolidHeight}
+            insetTop={insets.top}
+            backgroundColor={sheetBackground}
+            isDark={isDark}
+            onPress={() => {
+              onNewMap?.();
+              onClose();
+            }}
+            searchActive={searchActive}
+            searchQuery={searchQuery}
+            onSearchQueryChange={onSearchQueryChange}
+            onSearchOpen={onSearchOpen}
+            onSearchClose={onSearchClose}
+          />
+        ) : null}
       </View>
 
       <View
@@ -351,8 +427,9 @@ export default function HistorySheet({
           accessibilityLabel="Nuevo mapa"
           shape="pill"
           tone="accent"
+          compact
         >
-          <SquarePen size={18} color="#ffffff" />
+          <SquarePen size={17} color="#ffffff" />
           <Text className="text-[15px] font-bold text-white">Nuevo mapa</Text>
         </FloatingGlassButton>
       </View>
@@ -361,8 +438,19 @@ export default function HistorySheet({
         menu={actionMenu}
         onClose={() => setActionMenu(null)}
         onRename={startRename}
+        onChangeCategory={openCategoryEditor}
         onTogglePin={(entry) => onTogglePin(entry.id)}
         onDelete={handleDeleteEntry}
+      />
+
+      <CategoryEditSheet
+        visible={Boolean(categoryEditEntry)}
+        value={categoryEditEntry?.category ?? 'Otros'}
+        usedCategories={usedCategories}
+        userCategories={userCategories}
+        mapTitle={categoryEditEntry?.title}
+        onClose={() => setCategoryEditEntry(null)}
+        onSave={handleSaveCategory}
       />
     </View>
   );
@@ -392,5 +480,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 10,
     backgroundColor: 'transparent',
+  },
+  indexChevronSlot: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

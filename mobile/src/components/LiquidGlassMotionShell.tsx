@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import LiquidGlassSurface, { type LiquidGlassVariant } from './LiquidGlassSurface';
 import { useGlassAccessibility } from '../hooks/useGlassAccessibility';
 import { useTheme } from '../context/ThemeContext';
-import { COMPOSER_DARK_SURFACE } from '@shared/uiTokens';
+import { COMPOSER_DARK_SURFACE, liquidGlassShellClasses } from '@shared/uiTokens';
 
 /**
  * Composer-only glass motion shell.
@@ -182,7 +182,10 @@ export default function LiquidGlassMotionShell({
   return (
     <Animated.View style={shellMotionStyle} onLayout={handleLayout}>
       <Pressable onPressIn={handlePressIn} accessibilityRole="none">
-        <View className={className} style={[styles.shell, { borderRadius }, style]}>
+        <View
+          className={liquidGlassShellClasses(isDark, className)}
+          style={[styles.shell, { borderRadius }, style]}
+        >
           <LiquidGlassSurface
             style={StyleSheet.absoluteFill}
             borderRadius={borderRadius}

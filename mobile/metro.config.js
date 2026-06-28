@@ -14,5 +14,6 @@ config.resolver.nodeModulesPaths = [
 config.resolver.extraNodeModules = {
   "@shared": path.resolve(workspaceRoot, "shared"),
 };
+config.resolver.assetExts = [...config.resolver.assetExts, "html"];
 
 module.exports = withNativeWind(config, { input: "./global.css" });

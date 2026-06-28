@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text, View } from 'react-native';
+import { AlertTriangle, CheckCircle2, Info, type LucideIcon } from 'lucide-react-native';
 import type { CalloutLabel, StepContentBlock } from '../logic/contracts';
 
 const DEFAULT_CALLOUT_LABELS: Record<string, CalloutLabel> = {
@@ -8,10 +9,16 @@ const DEFAULT_CALLOUT_LABELS: Record<string, CalloutLabel> = {
   alert: 'Precaución',
 };
 
-const CALLOUT_BORDER: Record<string, string> = {
-  action: 'border-l-indigo-500',
-  info: 'border-l-neutral-400 dark:border-l-neutral-500',
-  alert: 'border-l-amber-500',
+const CALLOUT_ICONS: Record<string, LucideIcon> = {
+  action: CheckCircle2,
+  info: Info,
+  alert: AlertTriangle,
+};
+
+const CALLOUT_ICON_COLOR: Record<string, string> = {
+  action: '#6366f1',
+  info: '#a3a3a3',
+  alert: '#d97706',
 };
 
 type StepContentBlocksProps = {
@@ -45,18 +52,22 @@ function renderBlock(block: StepContentBlock, idx: number) {
   if (type === 'callout') {
     const kind = String(block.kind || 'info').toLowerCase();
     const label = String(block.label || DEFAULT_CALLOUT_LABELS[kind] || 'Idea clave');
-    const borderClass = CALLOUT_BORDER[kind] || CALLOUT_BORDER.info;
+    const Icon = CALLOUT_ICONS[kind] || Info;
+    const iconColor = CALLOUT_ICON_COLOR[kind] || CALLOUT_ICON_COLOR.info;
 
     return (
       <View
         key={idx}
-        className={`my-6 border-l-4 ${borderClass} bg-neutral-100/80 dark:bg-white/[0.04] rounded-r-2xl px-4 py-4`}
+        className="my-6 rounded-2xl bg-neutral-100/80 dark:bg-white/[0.04] px-4 py-4"
       >
-        <Text className="text-xs font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400 mb-2">
-          {label}
-        </Text>
+        <View className="flex-row items-center gap-2">
+          <Icon size={14} color={iconColor} />
+          <Text className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
+            {label}
+          </Text>
+        </View>
         {textContent ? (
-          <Text className="text-base leading-7 text-neutral-800 dark:text-neutral-200">{textContent}</Text>
+          <Text className="mt-2 text-base leading-7 text-neutral-800 dark:text-neutral-200">{textContent}</Text>
         ) : null}
         <BlockReferences references={block.references} />
       </View>

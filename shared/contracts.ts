@@ -106,6 +106,9 @@ export type CompletionCard = {
 export type ActionMapData = {
   title: string;
   category?: string;
+  tags?: string[];
+  suggestedCategory?: string;
+  suggestedTags?: string[];
   intent?: MapIntent;
   outputLanguage?: string;
   mapVersion?: number;
@@ -151,6 +154,8 @@ export type TransformRequest = {
   sourceLabel?: string;
   mapId?: string;
   depth?: MapDepth;
+  /** Categorías personalizadas del usuario para guiar la clasificación automática. */
+  existingCategories?: string[];
 };
 
 export type ChatTurn = {

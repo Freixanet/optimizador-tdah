@@ -2321,13 +2321,19 @@ export default function ComprensionApp() {
       className={`animate-slide-up content-column scroll-mt-28 ${viewAll ? 'mb-20 pb-12 border-b border-neutral-200 dark:border-white/5' : ''}`}
     >
       <div className="mb-16">
-        <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-6">
           <div className="flex items-center gap-2">
             <AppIcon className="w-5 h-5 text-[#1A1A1A] dark:text-[#EDEDED]" />
             <span className="text-sm font-bold tracking-widest uppercase text-[#1A1A1A] dark:text-[#EDEDED]">
               Idea central
             </span>
           </div>
+          {!isComplete && totalMinutes !== null && (
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+              <Clock className="w-4 h-4" aria-hidden="true" />
+              ~{totalMinutes} min
+            </p>
+          )}
         </div>
         <h2 className="heading-core text-[#1A1A1A] dark:text-[#EDEDED] mb-6">
           <BalancedText>{data?.coreIdea}</BalancedText>
@@ -2336,7 +2342,7 @@ export default function ComprensionApp() {
           {data?.coreSupport}
         </p>
         {data?.sourceMetadata && (
-          <div className="mt-8 rounded-2xl border border-neutral-200 dark:border-white/8 bg-white/70 dark:bg-white/[0.03] px-5 py-4">
+          <div className="mt-8 rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_12px_40px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.6)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35),inset_0_1px_1px_rgba(255,255,255,0.08)] overflow-hidden px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
                 Fuente detectada
@@ -2743,7 +2749,7 @@ export default function ComprensionApp() {
     />
   );
 
-  const renderResultHeader = (showReadingTime = false) => (
+  const renderResultHeader = () => (
     <div className="mb-12">
       <h1 className="text-xs sm:text-sm font-bold text-neutral-500 dark:text-neutral-300 uppercase tracking-[0.16em] min-w-0 leading-snug text-pretty">
         {data?.title}
@@ -2751,12 +2757,6 @@ export default function ComprensionApp() {
       {isStreamGenerating && (
         <p className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 animate-pulse">
           Generando mapa…
-        </p>
-      )}
-      {showReadingTime && totalMinutes !== null && (
-        <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-          <Clock className="w-4 h-4" aria-hidden="true" />
-          ~{totalMinutes} min
         </p>
       )}
     </div>
@@ -3167,7 +3167,7 @@ export default function ComprensionApp() {
                     paddingBottom: `${contentBottomPad}px`,
                   }}
                 >
-                  {currentStep === 0 && renderResultHeader(true)}
+                  {currentStep === 0 && renderResultHeader()}
 
                   {currentStep === 0 && renderResumen()}
                   {currentStep > 0 && renderStep(currentStep)}
@@ -3223,7 +3223,7 @@ export default function ComprensionApp() {
                     : 'pb-[calc(8rem+env(safe-area-inset-bottom))]'
                 }`}
               >
-                {renderResultHeader(!isComplete)}
+                {renderResultHeader()}
 
                 {isComplete ? (
                   essentialsReview ? renderEssentialsReview() : renderCompletion()

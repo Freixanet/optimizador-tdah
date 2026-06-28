@@ -1,9 +1,11 @@
 import React, { useRef } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { FALLBACK_MAP_CATEGORY, getEntrySourceLabel, getIntentLabel } from '@shared/categories';
 import { formatRelativeDate, type HistoryEntry } from '../logic/history';
+import MapCategoryLabel from './MapCategoryLabel';
 
-export const HISTORY_ENTRY_CARD_HEIGHT = 84;
+export const HISTORY_ENTRY_CARD_HEIGHT = 92;
 
 type HistoryEntryCardProps = {
   entry: HistoryEntry;
@@ -31,6 +33,12 @@ export default function HistoryEntryCard({
 }: HistoryEntryCardProps) {
   const cardRef = useRef<View>(null);
   const suppressPressRef = useRef(false);
+  const category = entry.category || FALLBACK_MAP_CATEGORY;
+  const metaParts = [
+    getEntrySourceLabel(entry),
+    entry.intent ? getIntentLabel(entry.intent) : null,
+    formatRelativeDate(entry.updatedAt),
+  ].filter(Boolean);
 
   const handleLongPress = () => {
     suppressPressRef.current = true;
@@ -45,9 +53,7 @@ export default function HistoryEntryCard({
       ref={cardRef}
       collapsable={false}
       className={`mb-2 rounded-2xl px-3 py-3 justify-center ${
-        isActive
-          ? 'bg-indigo-50 dark:bg-indigo-500/10'
-          : 'bg-white dark:bg-white/[0.03]'
+        isActive ? 'bg-indigo-50 dark:bg-indigo-500/10' : ''
       }`}
       style={{ height: HISTORY_ENTRY_CARD_HEIGHT }}
     >
@@ -79,15 +85,15 @@ export default function HistoryEntryCard({
           accessibilityRole="button"
           accessibilityLabel={entry.title}
         >
+          <MapCategoryLabel category={category} />
           <Text
-            className="text-base font-semibold leading-5 text-neutral-900 dark:text-neutral-100"
+            className="mt-1 text-base font-semibold leading-5 text-neutral-900 dark:text-neutral-100"
             numberOfLines={2}
-            style={{ height: 40 }}
           >
             {entry.title}
           </Text>
-          <Text className="mt-1 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
-            {formatRelativeDate(entry.updatedAt)}
+          <Text className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
+            {metaParts.join(' · ')}
           </Text>
         </Pressable>
       )}

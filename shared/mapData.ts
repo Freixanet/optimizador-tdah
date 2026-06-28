@@ -7,6 +7,7 @@ import type {
   SourceReference,
   StepListItem,
 } from './contracts';
+import { FALLBACK_MAP_CATEGORY, normalizeTags, sanitizeUserCategory } from './categories';
 
 const DEFAULT_CALLOUT_LABELS: Record<string, CalloutLabel> = {
   action: 'Para aplicarlo',
@@ -78,7 +79,8 @@ export function normalizeMapData(input: unknown): ActionMapData | null {
 
   const normalized: ActionMapData = {
     title: String(raw.title),
-    category: raw.category ? String(raw.category) : undefined,
+    category: sanitizeUserCategory(raw.category) ?? FALLBACK_MAP_CATEGORY,
+    tags: normalizeTags(raw.tags ?? raw.suggestedTags),
     intent: raw.intent === 'study' || raw.intent === 'apply' ? raw.intent : 'understand',
     outputLanguage: raw.outputLanguage ? String(raw.outputLanguage) : 'es',
     mapVersion: Number.isFinite(raw.mapVersion) ? Number(raw.mapVersion) : 2,

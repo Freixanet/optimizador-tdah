@@ -13,6 +13,7 @@ import {
   pullCloudHistory,
   pushHistoryEntry,
 } from '../logic/cloudHistory';
+import { toCloudUserProfile } from '../logic/cloudUserProfile';
 import {
   createEntry,
   deleteEntry,
@@ -23,9 +24,11 @@ import {
   setActiveId,
   togglePinEntry,
   updateActiveSession,
+  updateEntryCategory,
   type HistoryEntry,
   type HistoryStore,
 } from '../logic/history';
+import { collectUserCategories } from '@shared/categories';
 import { normalizeMapData } from '../logic/mapData';
 import {
   getInitialModelPreference,
@@ -43,7 +46,7 @@ import {
   pickImageFromLibrary,
   type UploadedFile,
 } from '../logic/attachments';
-import { detectUrlInput, friendlyTransformError } from '../logic/urlInput';
+import { detectUrlInput, friendlyTransformError, type TransformSourceKind } from '../logic/urlInput';
 import {
   fetchTransformWithProgress,
   TRANSFORM_IDLE_TIMEOUT_MESSAGE,
@@ -82,8 +85,17 @@ function toSourceType(requestType: TransformRequest['type']): SourceType {
   return requestType;
 }
 
+function resolveTransformSourceKind(
+  _uploadedFile: UploadedFile | null,
+  urlDetection: ReturnType<typeof detectUrlInput> | null
+): TransformSourceKind {
+  if (urlDetection?.kind === 'youtube') return 'youtube';
+  if (urlDetection?.kind === 'link') return 'link';
+  return 'text';
+}
+
 export function stepHaptic() {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
 type AppSessionContextValue = {
@@ -102,12 +114,16 @@ type AppSessionContextValue = {
   viewAll: boolean;
   historyOpen: boolean;
   setHistoryOpen: (open: boolean) => void;
+  openHistoryDrawer: () => void;
+  closeHistoryDrawer: () => void;
+  toggleHistoryDrawer: () => void;
   chatOpen: boolean;
   setChatOpen: (open: boolean) => void;
   authOpen: boolean;
   setAuthOpen: (open: boolean) => void;
   openAuthSheet: () => void;
   cloudUserEmail: string | null;
+  cloudUserAvatarUrl: string | null;
   cloudSignedIn: boolean;
   isCloudSyncConfigured: boolean;
   uploadedFile: UploadedFile | null;
@@ -124,6 +140,7 @@ type AppSessionContextValue = {
   progressLabel: string;
   stepProgress: number;
   goToStep: (idx: number, fromViewAll?: boolean) => void;
+  syncReadingStep: (step: number) => void;
   toggleViewMode: () => void;
   handleCancelLoading: () => void;
   handlePickImage: () => Promise<void>;
@@ -135,12 +152,16 @@ type AppSessionContextValue = {
   handleSelectHistory: (id: string) => void;
   handleDeleteHistory: (id: string) => void;
   handleRenameHistory: (id: string, title: string) => void;
+  handleUpdateCategory: (category: string) => void;
+  handleUpdateEntryCategory: (id: string, category: string) => void;
   handlePinHistory: (id: string) => void;
   handleCompleteMap: () => void;
   essentialsReview: boolean;
   setEssentialsReview: (value: boolean) => void;
   handleDownloadPdf: () => Promise<void>;
   isStreamGenerating: boolean;
+  transformIncomplete: boolean;
+  dismissTransformIncomplete: () => void;
 };
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
@@ -157,15 +178,45 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const [inputText, setInputText] = useState('');
   const [intent, setIntent] = useState<MapIntent>(initialActiveData?.intent ?? 'understand');
   const [error, setError] = useState<string | null>(null);
+  const [transformIncomplete, setTransformIncomplete] = useState(false);
   const [data, setData] = useState<ActionMapData | null>(initialActiveData);
   const [historyStore, setHistoryStore] = useState<HistoryStore>(initialHistory);
   const [currentStep, setCurrentStep] = useState(initialActive?.session.currentStep ?? 0);
   const [isComplete, setIsComplete] = useState(initialActive?.session.isComplete ?? false);
   const [viewAll, setViewAll] = useState(initialActive?.session.viewAll ?? false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpenState] = useState(false);
+  const historyOpenRef = useRef(false);
+
+  const openHistoryDrawer = useCallback(() => {
+    if (historyOpenRef.current) return;
+    historyOpenRef.current = true;
+    stepHaptic();
+    setHistoryOpenState(true);
+  }, []);
+
+  const closeHistoryDrawer = useCallback(() => {
+    if (!historyOpenRef.current) return;
+    historyOpenRef.current = false;
+    stepHaptic();
+    setHistoryOpenState(false);
+  }, []);
+
+  const toggleHistoryDrawer = useCallback(() => {
+    if (historyOpenRef.current) closeHistoryDrawer();
+    else openHistoryDrawer();
+  }, [closeHistoryDrawer, openHistoryDrawer]);
+
+  const setHistoryOpen = useCallback(
+    (open: boolean) => {
+      if (open) openHistoryDrawer();
+      else closeHistoryDrawer();
+    },
+    [closeHistoryDrawer, openHistoryDrawer]
+  );
   const [chatOpen, setChatOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [cloudUserEmail, setCloudUserEmail] = useState<string | null>(null);
+  const [cloudUserAvatarUrl, setCloudUserAvatarUrl] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [modelPreference, setModelPreferenceState] = useState<ModelPreference>(() =>
@@ -179,6 +230,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledRef = useRef(false);
+  const partialShownRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
   const pendingAuthRef = useRef(false);
   const cloudSignedIn = Boolean(cloudUserEmail);
@@ -257,9 +309,11 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (!supabase) return;
 
-    const hydrateCloudHistory = async (email: string | null) => {
-      setCloudUserEmail(email);
-      if (!email) return;
+    const hydrateCloudHistory = async (user: Parameters<typeof toCloudUserProfile>[0] | null) => {
+      const profile = user ? toCloudUserProfile(user) : null;
+      setCloudUserEmail(profile?.email ?? null);
+      setCloudUserAvatarUrl(profile?.avatarUrl ?? null);
+      if (!profile?.email) return;
       try {
         await migrateLocalHistory(historyStoreRef.current);
         const remoteEntries = await pullCloudHistory();
@@ -270,14 +324,15 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         });
       } catch (err) {
         console.error('No se pudo sincronizar el historial.', err);
+        setError('No se pudo sincronizar el historial. Tus mapas locales siguen disponibles.');
       }
     };
 
     void supabase.auth
       .getSession()
-      .then(({ data: sessionData }) => hydrateCloudHistory(sessionData.session?.user?.email ?? null));
+      .then(({ data: sessionData }) => hydrateCloudHistory(sessionData.session?.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      void hydrateCloudHistory(session?.user?.email ?? null);
+      void hydrateCloudHistory(session?.user ?? null);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -299,17 +354,53 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     stepHaptic();
   }, []);
 
+  const syncReadingStep = useCallback((step: number) => {
+    setCurrentStep((prev) => (prev === step ? prev : step));
+  }, []);
+
   const toggleViewMode = useCallback(() => {
     setViewAll((v) => !v);
     setIsComplete(false);
     stepHaptic();
   }, []);
 
+  const dismissTransformIncomplete = useCallback(() => {
+    setTransformIncomplete(false);
+  }, []);
+
+  const failTransform = useCallback(
+    (message: string, partialShown: boolean, sourceKind: TransformSourceKind) => {
+      if (partialShown) {
+        setTransformIncomplete(true);
+        setPhase('result');
+      } else {
+        const friendly = friendlyTransformError(message, sourceKind);
+        setError(friendly);
+        setTransformIncomplete(false);
+        setPhase('input');
+      }
+
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    },
+    []
+  );
+
   const handleCancelLoading = useCallback(() => {
     transformCancelledRef.current = true;
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-    setPhase('input');
+    setIsStreamGenerating(false);
+
+    if (partialShownRef.current) {
+      setTransformIncomplete(true);
+      setPhase('result');
+    } else {
+      setData(null);
+      setTransformIncomplete(false);
+      setPhase('input');
+    }
+
+    partialShownRef.current = false;
   }, []);
 
   const handleAttachmentError = useCallback((err: unknown) => {
@@ -384,14 +475,19 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
     setPhase('loading');
     setError(null);
+    setTransformIncomplete(false);
     setAttachMenuOpen(false);
     transformCancelledRef.current = false;
+    partialShownRef.current = false;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const sourceKind = resolveTransformSourceKind(uploadedFile, urlDetection);
+    let hasShownPartial = false;
 
     try {
       const mapId = generateMapId();
+      const existingCategories = collectUserCategories(historyStoreRef.current.entries);
       const sourceLabel =
         uploadedFile?.name || inputText.trim().split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
 
@@ -469,12 +565,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         };
       }
 
+      body.existingCategories = existingCategories;
+
       const accessToken = supabase
         ? (await supabase.auth.getSession()).data.session?.access_token
         : undefined;
       const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
 
-      let hasShownPartial = false;
       setIsStreamGenerating(true);
 
       const saveCompletedMap = (normalized: ActionMapData) => {
@@ -498,6 +595,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         setUploadedFile(null);
         setInputText('');
         setPhase('result');
+        setTransformIncomplete(false);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       };
 
@@ -511,6 +609,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
           onPartial: (partialMap) => {
             if (!hasShownPartial) {
               hasShownPartial = true;
+              partialShownRef.current = true;
               setPhase('result');
               setCurrentStep(0);
               setIsComplete(false);
@@ -529,25 +628,29 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         if (transformCancelledRef.current) {
-          setPhase('input');
+          if (partialShownRef.current) {
+            setTransformIncomplete(true);
+            setPhase('result');
+          } else {
+            setData(null);
+            setTransformIncomplete(false);
+            setPhase('input');
+          }
+          partialShownRef.current = false;
           return;
         }
-        setError(TRANSFORM_IDLE_TIMEOUT_MESSAGE);
-        setPhase('input');
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        failTransform(TRANSFORM_IDLE_TIMEOUT_MESSAGE, hasShownPartial, sourceKind);
         return;
       }
 
       const rawMessage =
         err instanceof Error ? err.message : 'No se pudo procesar el contenido.';
-      setError(friendlyTransformError(rawMessage));
-      setPhase('input');
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      failTransform(rawMessage, hasShownPartial, sourceKind);
     } finally {
       setIsStreamGenerating(false);
       abortControllerRef.current = null;
     }
-  }, [depthPreference, inputText, intent, modelPreference, uploadedFile]);
+  }, [depthPreference, failTransform, inputText, intent, modelPreference, uploadedFile]);
 
   const handleNewMap = useCallback(() => {
     setHistoryStore((prev) => {
@@ -560,6 +663,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     setAttachMenuOpen(false);
     setData(null);
     setError(null);
+    setTransformIncomplete(false);
     setCurrentStep(0);
     setIsComplete(false);
     setViewAll(false);
@@ -593,6 +697,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       setEssentialsReview(false);
       setPhase('result');
       setError(null);
+      setTransformIncomplete(false);
       stepHaptic();
     },
     [historyStore.entries]
@@ -609,9 +714,10 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       });
 
       if (supabase && cloudSignedIn) {
-        void deleteCloudHistoryEntry(id).catch((err) =>
-          console.error('No se pudo eliminar el mapa en la nube.', err)
-        );
+        void deleteCloudHistoryEntry(id).catch((err) => {
+          console.error('No se pudo eliminar el mapa en la nube.', err);
+          setError('No se pudo eliminar el mapa en la nube.');
+        });
       }
 
       if (wasActive) {
@@ -636,6 +742,41 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     });
     stepHaptic();
   }, []);
+
+  const handleUpdateEntryCategory = useCallback(
+    (id: string, category: string) => {
+      setHistoryStore((prev) => {
+        const updated = updateEntryCategory(prev, id, category);
+        saveHistory(updated);
+
+        if (cloudSignedIn) {
+          const entry = updated.entries.find((item) => item.id === id);
+          if (entry) {
+            void pushHistoryEntry(entry).catch((err) => {
+              console.error('No se pudo sincronizar la categoría.', err);
+            });
+          }
+        }
+
+        return updated;
+      });
+
+      if (historyStoreRef.current.activeId === id) {
+        setData((current) => (current ? { ...current, category } : current));
+      }
+      stepHaptic();
+    },
+    [cloudSignedIn]
+  );
+
+  const handleUpdateCategory = useCallback(
+    (category: string) => {
+      const activeId = historyStoreRef.current.activeId;
+      if (!activeId) return;
+      handleUpdateEntryCategory(activeId, category);
+    },
+    [handleUpdateEntryCategory]
+  );
 
   const handlePinHistory = useCallback((id: string) => {
     setHistoryStore((prev) => {
@@ -715,12 +856,16 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       viewAll,
       historyOpen,
       setHistoryOpen,
+      openHistoryDrawer,
+      closeHistoryDrawer,
+      toggleHistoryDrawer,
       chatOpen,
       setChatOpen,
       authOpen,
       setAuthOpen,
       openAuthSheet,
       cloudUserEmail,
+      cloudUserAvatarUrl,
       cloudSignedIn,
       isCloudSyncConfigured,
       uploadedFile,
@@ -737,6 +882,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       progressLabel,
       stepProgress,
       goToStep,
+      syncReadingStep,
       toggleViewMode,
       handleCancelLoading,
       handlePickImage,
@@ -748,12 +894,16 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       handleSelectHistory,
       handleDeleteHistory,
       handleRenameHistory,
+      handleUpdateCategory,
+      handleUpdateEntryCategory,
       handlePinHistory,
       handleCompleteMap,
       essentialsReview,
       setEssentialsReview,
       handleDownloadPdf,
       isStreamGenerating,
+      transformIncomplete,
+      dismissTransformIncomplete,
     }),
     [
       phase,
@@ -766,10 +916,15 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       isComplete,
       viewAll,
       historyOpen,
+      setHistoryOpen,
+      openHistoryDrawer,
+      closeHistoryDrawer,
+      toggleHistoryDrawer,
       chatOpen,
       authOpen,
       openAuthSheet,
       cloudUserEmail,
+      cloudUserAvatarUrl,
       cloudSignedIn,
       uploadedFile,
       attachMenuOpen,
@@ -783,6 +938,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       progressLabel,
       stepProgress,
       goToStep,
+      syncReadingStep,
       toggleViewMode,
       handleCancelLoading,
       handlePickImage,
@@ -794,11 +950,15 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       handleSelectHistory,
       handleDeleteHistory,
       handleRenameHistory,
+      handleUpdateCategory,
+      handleUpdateEntryCategory,
       handlePinHistory,
       handleCompleteMap,
       essentialsReview,
       handleDownloadPdf,
       isStreamGenerating,
+      transformIncomplete,
+      dismissTransformIncomplete,
     ]
   );
 

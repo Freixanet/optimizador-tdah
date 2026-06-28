@@ -27,8 +27,12 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "assetBundlePatterns": [
+      "assets/**/*"
+    ],
     "plugins": [
       "expo-dev-client",
+      "expo-asset",
       [
         "expo-image-picker",
         {

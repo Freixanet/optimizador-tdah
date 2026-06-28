@@ -1,3 +1,5 @@
+export * from './categories';
+export * from './features';
 export * from './contracts';
 export * from './youtube';
 export * from './urlInput';
@@ -5,6 +7,7 @@ export * from './modelPreference';
 export * from './depthPreference';
 export * from './uiTokens';
 export * from './history';
+export * from './historySearch';
 export * from './mapData';
 export * from './apiBase';
 export * from './storage';

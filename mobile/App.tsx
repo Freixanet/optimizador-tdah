@@ -1,16 +1,16 @@
 import './global.css';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import AuthSheet from './src/components/AuthSheet';
+import OAuthRedirectListener from './src/components/OAuthRedirectListener';
 import { AppSessionProvider, useAppSession } from './src/context/AppSessionContext';
 import { AppVariantProvider } from './src/context/AppVariantContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { bootstrapStorage } from './src/shims/localStorage';
 import { getAppVariant, switchAppVariant, type AppVariant } from './src/logic/appVariant';
-import { completeOAuthRedirect } from './src/logic/cloudHistory';
 import ComprensionApp from './src/screens/ComprensionApp';
 import ClassicShell from './src/screens/classic/ClassicShell';
 
@@ -30,22 +30,6 @@ function AppShell() {
   const { isDark } = useTheme();
   const [appVariant, setAppVariant] = useState<AppVariant>(() => getAppVariant());
 
-  const handleAuthRedirect = useCallback((url: string) => {
-    void completeOAuthRedirect(url).catch((err) => {
-      console.error('OAuth redirect failed', err);
-    });
-  }, []);
-
-  useEffect(() => {
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      handleAuthRedirect(url);
-    });
-    void Linking.getInitialURL().then((url) => {
-      if (url) handleAuthRedirect(url);
-    });
-    return () => subscription.remove();
-  }, [handleAuthRedirect]);
-
   const handleVariantChange = useCallback((next: AppVariant) => {
     switchAppVariant(next, () => setAppVariant(next));
   }, []);
@@ -55,8 +39,11 @@ function AppShell() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <AppVariantProvider onVariantChange={handleVariantChange}>
         <AppSessionProvider key={appVariant}>
-          {appVariant === 'classic' ? <ClassicShell /> : <ComprensionApp />}
-          <AuthHost />
+          <View style={{ flex: 1 }}>
+            {appVariant === 'classic' ? <ClassicShell /> : <ComprensionApp />}
+            <AuthHost />
+            <OAuthRedirectListener />
+          </View>
         </AppSessionProvider>
       </AppVariantProvider>
     </View>

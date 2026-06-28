@@ -1,6 +1,6 @@
 import React from 'react';
 import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Pin, SquarePen, Trash2 } from 'lucide-react-native';
+import { Pin, SquarePen, Tag, Trash2 } from 'lucide-react-native';
 import GlassSurface from './GlassSurface';
 import type { HistoryEntry } from '../logic/history';
 
@@ -15,6 +15,7 @@ type HistoryEntryGlassMenuProps = {
   menu: HistoryEntryActionAnchor | null;
   onClose: () => void;
   onRename: (entry: HistoryEntry) => void;
+  onChangeCategory: (entry: HistoryEntry) => void;
   onTogglePin: (entry: HistoryEntry) => void;
   onDelete: (entry: HistoryEntry) => void;
 };
@@ -26,6 +27,7 @@ export default function HistoryEntryGlassMenu({
   menu,
   onClose,
   onRename,
+  onChangeCategory,
   onTogglePin,
   onDelete,
 }: HistoryEntryGlassMenuProps) {
@@ -39,7 +41,7 @@ export default function HistoryEntryGlassMenu({
       <View style={styles.root}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Cerrar menú" />
         <View pointerEvents="box-none" style={[styles.menuHost, { top, left, width: MENU_WIDTH }]}>
-          <GlassSurface liquid borderRadius={20} className="rounded-[20px] overflow-hidden shadow-xl">
+          <GlassSurface liquid borderRadius={20} className="rounded-[20px] shadow-xl">
             <Pressable
               onPress={() => {
                 onRename(menu.entry);
@@ -49,6 +51,19 @@ export default function HistoryEntryGlassMenu({
             >
               <SquarePen size={16} color="#737373" />
               <Text className="text-sm font-medium text-neutral-800 dark:text-neutral-100">Renombrar</Text>
+            </Pressable>
+            <View className="h-px bg-neutral-200/80 dark:bg-white/10" />
+            <Pressable
+              onPress={() => {
+                onChangeCategory(menu.entry);
+                onClose();
+              }}
+              className="flex-row items-center gap-3 px-4 py-3.5 active:opacity-70"
+            >
+              <Tag size={16} color="#737373" />
+              <Text className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                Cambiar categoría
+              </Text>
             </Pressable>
             <View className="h-px bg-neutral-200/80 dark:bg-white/10" />
             <Pressable
