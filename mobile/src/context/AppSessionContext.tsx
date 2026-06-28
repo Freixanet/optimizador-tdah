@@ -273,20 +273,97 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     stepHaptic();
   }, []);
 
-  useEffect(() => {
-    if (phase !== 'result' || !data || !historyStore.activeId) return;
+  const saveStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    setHistoryStore((prev) => {
-      const updated = updateActiveSession(prev, {
-        data,
-        currentStep,
-        isComplete,
-        viewAll,
+  type PendingPersist = {
+    id: string;
+    step: number;
+    isComplete: boolean;
+    viewAll: boolean;
+  };
+  const pendingPersistRef = useRef<PendingPersist | null>(null);
+
+  const flushPendingSessionPersist = useCallback(() => {
+    const pending = pendingPersistRef.current;
+    if (!pending) return;
+
+    if (saveStepTimerRef.current) {
+      clearTimeout(saveStepTimerRef.current);
+      saveStepTimerRef.current = null;
+    }
+
+    setHistoryStore((prevStore) => {
+      const entry = prevStore.entries.find((e) => e.id === pending.id);
+      if (!entry) return prevStore;
+
+      if (
+        entry.session.currentStep === pending.step &&
+        entry.session.isComplete === pending.isComplete &&
+        entry.session.viewAll === pending.viewAll
+      ) {
+        return prevStore;
+      }
+
+      const now = Date.now();
+      const entries = prevStore.entries.map((item) => {
+        if (item.id !== pending.id) return item;
+
+        const updatedSession = {
+          ...item.session,
+          currentStep: pending.step,
+          isComplete: pending.isComplete,
+          viewAll: pending.viewAll,
+        };
+
+        return {
+          ...item,
+          updatedAt: now,
+          session: updatedSession,
+        };
       });
-      saveHistory(updated);
-      return updated;
+
+      const updatedStore = {
+        ...prevStore,
+        entries,
+      };
+
+      saveHistory(updatedStore);
+      return updatedStore;
     });
-  }, [phase, data, currentStep, isComplete, viewAll, historyStore.activeId]);
+
+    pendingPersistRef.current = null;
+  }, []);
+
+  const persistSessionState = useCallback((step: number, complete: boolean, viewAllMode: boolean) => {
+    const scheduledActiveId = historyStoreRef.current.activeId;
+    if (!scheduledActiveId) return;
+
+    // Si hay una persistencia pendiente para otro mapa, la forzamos de inmediato
+    if (pendingPersistRef.current && pendingPersistRef.current.id !== scheduledActiveId) {
+      flushPendingSessionPersist();
+    }
+
+    pendingPersistRef.current = {
+      id: scheduledActiveId,
+      step,
+      isComplete: complete,
+      viewAll: viewAllMode,
+    };
+
+    if (saveStepTimerRef.current) {
+      clearTimeout(saveStepTimerRef.current);
+    }
+
+    saveStepTimerRef.current = setTimeout(() => {
+      flushPendingSessionPersist();
+    }, 800);
+  }, [flushPendingSessionPersist]);
+
+  useEffect(() => {
+    return () => {
+      flushPendingSessionPersist();
+    };
+  }, [flushPendingSessionPersist]);
 
   useEffect(() => {
     historyStoreRef.current = historyStore;
@@ -352,19 +429,27 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const goToStep = useCallback((idx: number, fromViewAll = false) => {
     setIsComplete(false);
     setCurrentStep(idx);
+    const nextViewAll = fromViewAll ? false : viewAll;
     if (fromViewAll) setViewAll(false);
+    persistSessionState(idx, false, nextViewAll);
     stepHaptic();
-  }, []);
+  }, [persistSessionState, viewAll]);
 
   const syncReadingStep = useCallback((step: number) => {
-    setCurrentStep((prev) => (prev === step ? prev : step));
-  }, []);
+    setCurrentStep((prev) => {
+      if (prev === step) return prev;
+      persistSessionState(step, isComplete, viewAll);
+      return step;
+    });
+  }, [persistSessionState, isComplete, viewAll]);
 
   const toggleViewMode = useCallback(() => {
-    setViewAll((v) => !v);
+    const nextViewAll = !viewAll;
+    setViewAll(nextViewAll);
     setIsComplete(false);
+    persistSessionState(currentStep, false, nextViewAll);
     stepHaptic();
-  }, []);
+  }, [currentStep, persistSessionState, viewAll]);
 
   const dismissTransformIncomplete = useCallback(() => {
     setTransformIncomplete(false);
@@ -655,6 +740,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   }, [depthPreference, failTransform, inputText, intent, modelPreference, uploadedFile]);
 
   const handleNewMap = useCallback(() => {
+    flushPendingSessionPersist();
     setHistoryStore((prev) => {
       const updated = setActiveId(prev, null);
       saveHistory(updated);
@@ -673,9 +759,10 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     setChatOpen(false);
     setEssentialsReview(false);
     setPhase('input');
-  }, []);
+  }, [flushPendingSessionPersist]);
 
   const handleSignOut = useCallback(async () => {
+    flushPendingSessionPersist();
     // 1. Cerrar drawers y overlays
     setHistoryOpen(false);
     setChatOpen(false);
@@ -708,10 +795,11 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       console.error('Error al cerrar sesión remota:', err);
       throw err;
     }
-  }, []);
+  }, [flushPendingSessionPersist]);
 
   const handleSelectHistory = useCallback(
     (id: string) => {
+      flushPendingSessionPersist();
       const entry = historyStore.entries.find((e) => e.id === id);
       if (!entry) return;
 
@@ -737,7 +825,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       setTransformIncomplete(false);
       stepHaptic();
     },
-    [historyStore.entries]
+    [historyStore.entries, flushPendingSessionPersist]
   );
 
   const handleDeleteHistory = useCallback(
@@ -827,9 +915,10 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const handleCompleteMap = useCallback(() => {
     setIsComplete(true);
     setEssentialsReview(false);
+    persistSessionState(currentStep, true, viewAll);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     stepHaptic();
-  }, []);
+  }, [currentStep, persistSessionState, viewAll]);
 
   const handleDownloadPdf = useCallback(async () => {
     const mapId = historyStore.activeId;

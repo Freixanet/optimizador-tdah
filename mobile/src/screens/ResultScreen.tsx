@@ -315,6 +315,7 @@ export default function ResultScreen() {
               session.setEssentialsReview(false);
               session.goToStep(0);
             },
+            fullWidth: true,
           },
           {
             label: 'Nuevo mapa',
