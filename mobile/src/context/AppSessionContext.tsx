@@ -234,6 +234,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const transformCancelledRef = useRef(false);
   const partialShownRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
+
+  const commitHistoryStore = useCallback((updatedStore: HistoryStore) => {
+    historyStoreRef.current = updatedStore;
+    saveHistory(updatedStore);
+    setHistoryStore(updatedStore);
+  }, []);
+
   const pendingAuthRef = useRef(false);
   const cloudSignedIn = Boolean(cloudUserEmail);
 
@@ -283,6 +290,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   };
   const pendingPersistRef = useRef<PendingPersist | null>(null);
 
+  const syncCloudEntry = useCallback((entry: HistoryEntry) => {
+    if (!supabase || !cloudSignedIn) return;
+    void pushHistoryEntry(entry).catch((err) => {
+      console.error(`Error al sincronizar el mapa ${entry.id} en la nube:`, err);
+    });
+  }, [cloudSignedIn]);
+
   const flushPendingSessionPersist = useCallback(() => {
     const pending = pendingPersistRef.current;
     if (!pending) return;
@@ -292,47 +306,54 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       saveStepTimerRef.current = null;
     }
 
-    setHistoryStore((prevStore) => {
-      const entry = prevStore.entries.find((e) => e.id === pending.id);
-      if (!entry) return prevStore;
+    const currentStore = historyStoreRef.current;
+    const entry = currentStore.entries.find((e) => e.id === pending.id);
+    if (!entry) {
+      pendingPersistRef.current = null;
+      return;
+    }
 
-      if (
-        entry.session.currentStep === pending.step &&
-        entry.session.isComplete === pending.isComplete &&
-        entry.session.viewAll === pending.viewAll
-      ) {
-        return prevStore;
-      }
+    if (
+      entry.session.currentStep === pending.step &&
+      entry.session.isComplete === pending.isComplete &&
+      entry.session.viewAll === pending.viewAll
+    ) {
+      pendingPersistRef.current = null;
+      return;
+    }
 
-      const now = Date.now();
-      const entries = prevStore.entries.map((item) => {
-        if (item.id !== pending.id) return item;
+    const now = Date.now();
+    const entries = currentStore.entries.map((item) => {
+      if (item.id !== pending.id) return item;
 
-        const updatedSession = {
-          ...item.session,
-          currentStep: pending.step,
-          isComplete: pending.isComplete,
-          viewAll: pending.viewAll,
-        };
-
-        return {
-          ...item,
-          updatedAt: now,
-          session: updatedSession,
-        };
-      });
-
-      const updatedStore = {
-        ...prevStore,
-        entries,
+      const updatedSession = {
+        ...item.session,
+        currentStep: pending.step,
+        isComplete: pending.isComplete,
+        viewAll: pending.viewAll,
       };
 
-      saveHistory(updatedStore);
-      return updatedStore;
+      return {
+        ...item,
+        updatedAt: now,
+        session: updatedSession,
+      };
     });
 
+    const updatedStore = {
+      ...currentStore,
+      entries,
+    };
+
+    commitHistoryStore(updatedStore);
+
+    const updatedEntry = updatedStore.entries.find((e) => e.id === pending.id);
+    if (updatedEntry) {
+      syncCloudEntry(updatedEntry);
+    }
+
     pendingPersistRef.current = null;
-  }, []);
+  }, [syncCloudEntry, commitHistoryStore]);
 
   const persistSessionState = useCallback((step: number, complete: boolean, viewAllMode: boolean) => {
     const scheduledActiveId = historyStoreRef.current.activeId;
@@ -416,15 +437,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!supabase || !cloudSignedIn) return;
-    const timer = setTimeout(() => {
-      void Promise.all(historyStore.entries.map(pushHistoryEntry)).catch((err) => {
-        console.error('Los cambios se sincronizarán más tarde.', err);
-      });
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [historyStore.entries, cloudSignedIn]);
+  // Eliminado el useEffect de sincronización global masiva para favorecer sync selectivo
 
   const goToStep = useCallback((idx: number, fromViewAll = false) => {
     setIsComplete(false);
@@ -669,11 +682,14 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
           viewAll: false,
         };
 
-        setHistoryStore((prev) => {
-          const updated = createEntry(prev, session, toSourceType(body.type), mapId);
-          saveHistory(updated);
-          return updated;
-        });
+        const currentStore = historyStoreRef.current;
+        const updatedStore = createEntry(currentStore, session, toSourceType(body.type), mapId);
+        commitHistoryStore(updatedStore);
+
+        const createdEntry = updatedStore.entries.find((item) => item.id === mapId);
+        if (createdEntry) {
+          syncCloudEntry(createdEntry);
+        }
 
         setData(normalized);
         setCurrentStep(0);
@@ -737,15 +753,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       setIsStreamGenerating(false);
       abortControllerRef.current = null;
     }
-  }, [depthPreference, failTransform, inputText, intent, modelPreference, uploadedFile]);
+  }, [depthPreference, failTransform, inputText, intent, modelPreference, uploadedFile, syncCloudEntry, commitHistoryStore]);
 
   const handleNewMap = useCallback(() => {
     flushPendingSessionPersist();
-    setHistoryStore((prev) => {
-      const updated = setActiveId(prev, null);
-      saveHistory(updated);
-      return updated;
-    });
+    const currentStore = historyStoreRef.current;
+    const updatedStore = setActiveId(currentStore, null);
+    commitHistoryStore(updatedStore);
     setInputText('');
     setUploadedFile(null);
     setAttachMenuOpen(false);
@@ -759,7 +773,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     setChatOpen(false);
     setEssentialsReview(false);
     setPhase('input');
-  }, [flushPendingSessionPersist]);
+  }, [commitHistoryStore, flushPendingSessionPersist]);
 
   const handleSignOut = useCallback(async () => {
     flushPendingSessionPersist();
@@ -785,8 +799,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
     // 4. Purgar historial local de mapas en disco y memoria de forma segura
     const emptyStore = { entries: [], activeId: null };
-    setHistoryStore(emptyStore);
-    saveHistory(emptyStore);
+    commitHistoryStore(emptyStore);
 
     // 5. Ejecutar signOut remoto
     try {
@@ -795,22 +808,20 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       console.error('Error al cerrar sesión remota:', err);
       throw err;
     }
-  }, [flushPendingSessionPersist]);
+  }, [commitHistoryStore, flushPendingSessionPersist]);
 
   const handleSelectHistory = useCallback(
     (id: string) => {
       flushPendingSessionPersist();
-      const entry = historyStore.entries.find((e) => e.id === id);
+      const currentStore = historyStoreRef.current;
+      const entry = currentStore.entries.find((e) => e.id === id);
       if (!entry) return;
 
       const normalized = normalizeMapData(entry.session.data);
       if (!normalized) return;
 
-      setHistoryStore((prev) => {
-        const updated = setActiveId(prev, id);
-        saveHistory(updated);
-        return updated;
-      });
+      const updatedStore = setActiveId(currentStore, id);
+      commitHistoryStore(updatedStore);
 
       setData(normalized);
       setIntent(normalized.intent ?? 'understand');
@@ -825,18 +836,16 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       setTransformIncomplete(false);
       stepHaptic();
     },
-    [historyStore.entries, flushPendingSessionPersist]
+    [commitHistoryStore, flushPendingSessionPersist]
   );
 
   const handleDeleteHistory = useCallback(
     (id: string) => {
-      const wasActive = historyStore.activeId === id;
+      const currentStore = historyStoreRef.current;
+      const wasActive = currentStore.activeId === id;
 
-      setHistoryStore((prev) => {
-        const updated = deleteEntry(prev, id);
-        saveHistory(updated);
-        return updated;
-      });
+      const updatedStore = deleteEntry(currentStore, id);
+      commitHistoryStore(updatedStore);
 
       if (supabase && cloudSignedIn) {
         void deleteCloudHistoryEntry(id).catch((err) => {
@@ -856,42 +865,39 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
       stepHaptic();
     },
-    [historyStore.activeId, cloudSignedIn]
+    [commitHistoryStore, cloudSignedIn]
   );
 
   const handleRenameHistory = useCallback((id: string, title: string) => {
-    setHistoryStore((prev) => {
-      const updated = renameEntry(prev, id, title);
-      saveHistory(updated);
-      return updated;
-    });
+    const currentStore = historyStoreRef.current;
+    const updatedStore = renameEntry(currentStore, id, title);
+    commitHistoryStore(updatedStore);
+
+    const updatedEntry = updatedStore.entries.find((item) => item.id === id);
+    if (updatedEntry) {
+      syncCloudEntry(updatedEntry);
+    }
+
     stepHaptic();
-  }, []);
+  }, [syncCloudEntry, commitHistoryStore]);
 
   const handleUpdateEntryCategory = useCallback(
     (id: string, category: string) => {
-      setHistoryStore((prev) => {
-        const updated = updateEntryCategory(prev, id, category);
-        saveHistory(updated);
+      const currentStore = historyStoreRef.current;
+      const updatedStore = updateEntryCategory(currentStore, id, category);
+      commitHistoryStore(updatedStore);
 
-        if (cloudSignedIn) {
-          const entry = updated.entries.find((item) => item.id === id);
-          if (entry) {
-            void pushHistoryEntry(entry).catch((err) => {
-              console.error('No se pudo sincronizar la categoría.', err);
-            });
-          }
-        }
-
-        return updated;
-      });
+      const updatedEntry = updatedStore.entries.find((item) => item.id === id);
+      if (updatedEntry) {
+        syncCloudEntry(updatedEntry);
+      }
 
       if (historyStoreRef.current.activeId === id) {
         setData((current) => (current ? { ...current, category } : current));
       }
       stepHaptic();
     },
-    [cloudSignedIn]
+    [syncCloudEntry, commitHistoryStore]
   );
 
   const handleUpdateCategory = useCallback(
@@ -904,13 +910,17 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   );
 
   const handlePinHistory = useCallback((id: string) => {
-    setHistoryStore((prev) => {
-      const updated = togglePinEntry(prev, id);
-      saveHistory(updated);
-      return updated;
-    });
+    const currentStore = historyStoreRef.current;
+    const updatedStore = togglePinEntry(currentStore, id);
+    commitHistoryStore(updatedStore);
+
+    const updatedEntry = updatedStore.entries.find((item) => item.id === id);
+    if (updatedEntry) {
+      syncCloudEntry(updatedEntry);
+    }
+
     stepHaptic();
-  }, []);
+  }, [syncCloudEntry, commitHistoryStore]);
 
   const handleCompleteMap = useCallback(() => {
     setIsComplete(true);
