@@ -235,6 +235,53 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const partialShownRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
 
+  const pendingDeletesRef = useRef<string[]>([]);
+
+  const getPendingDeletes = useCallback((email: string): string[] => {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const val = localStorage.getItem(`nucleo_pending_deletes:${normalizedEmail}`);
+      if (val) {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.filter((item) => typeof item === 'string');
+      }
+    } catch (err) {
+      console.error('Error al cargar la cola de borrados pendientes:', err);
+    }
+    return [];
+  }, []);
+
+  const savePendingDeletes = useCallback((email: string, ids: string[]) => {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const deduplicated = Array.from(new Set(ids));
+      localStorage.setItem(`nucleo_pending_deletes:${normalizedEmail}`, JSON.stringify(deduplicated));
+    } catch (err) {
+      console.error('Error al guardar la cola de borrados pendientes:', err);
+    }
+  }, []);
+
+  const flushPendingDeletes = useCallback(async (email: string) => {
+    const ids = getPendingDeletes(email);
+    if (ids.length === 0) return;
+
+    const remainingIds = [...ids];
+    for (const id of ids) {
+      try {
+        await deleteCloudHistoryEntry(id);
+        const index = remainingIds.indexOf(id);
+        if (index > -1) {
+          remainingIds.splice(index, 1);
+        }
+      } catch (err) {
+        console.error(`Error al procesar eliminación pendiente de ${id}:`, err);
+        break;
+      }
+    }
+    pendingDeletesRef.current = remainingIds;
+    savePendingDeletes(email, remainingIds);
+  }, [getPendingDeletes, savePendingDeletes]);
+
   const commitHistoryStore = useCallback((updatedStore: HistoryStore) => {
     historyStoreRef.current = updatedStore;
     saveHistory(updatedStore);
@@ -411,17 +458,24 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
     const hydrateCloudHistory = async (user: Parameters<typeof toCloudUserProfile>[0] | null) => {
       const profile = user ? toCloudUserProfile(user) : null;
-      setCloudUserEmail(profile?.email ?? null);
+      const email = profile?.email ?? null;
+      setCloudUserEmail(email);
       setCloudUserAvatarUrl(profile?.avatarUrl ?? null);
-      if (!profile?.email) return;
+      if (!email) return;
       try {
+        pendingDeletesRef.current = getPendingDeletes(email);
+        await flushPendingDeletes(email);
+
         await migrateLocalHistory(historyStoreRef.current);
         const remoteEntries = await pullCloudHistory();
-        setHistoryStore((previous) => {
-          const merged = { ...previous, entries: mergeHistory(previous.entries, remoteEntries) };
-          saveHistory(merged);
-          return merged;
-        });
+
+        const remoteEntriesFiltered = remoteEntries.filter(
+          (entry) => !pendingDeletesRef.current.includes(entry.id)
+        );
+
+        const currentStore = historyStoreRef.current;
+        const merged = { ...currentStore, entries: mergeHistory(currentStore.entries, remoteEntriesFiltered) };
+        commitHistoryStore(merged);
       } catch (err) {
         console.error('No se pudo sincronizar el historial.', err);
         setError('No se pudo sincronizar el historial. Tus mapas locales siguen disponibles.');
@@ -847,11 +901,20 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       const updatedStore = deleteEntry(currentStore, id);
       commitHistoryStore(updatedStore);
 
-      if (supabase && cloudSignedIn) {
-        void deleteCloudHistoryEntry(id).catch((err) => {
-          console.error('No se pudo eliminar el mapa en la nube.', err);
-          setError('No se pudo eliminar el mapa en la nube.');
-        });
+      if (cloudSignedIn && cloudUserEmail) {
+        const nextDeletes = Array.from(new Set([...pendingDeletesRef.current, id]));
+        pendingDeletesRef.current = nextDeletes;
+        savePendingDeletes(cloudUserEmail, nextDeletes);
+
+        deleteCloudHistoryEntry(id)
+          .then(() => {
+            const updatedDeletes = pendingDeletesRef.current.filter((item) => item !== id);
+            pendingDeletesRef.current = updatedDeletes;
+            savePendingDeletes(cloudUserEmail, updatedDeletes);
+          })
+          .catch((err) => {
+            console.error(`Error al eliminar en la nube el mapa ${id}. Se reintentará en segundo plano.`, err);
+          });
       }
 
       if (wasActive) {
@@ -865,7 +928,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
       stepHaptic();
     },
-    [commitHistoryStore, cloudSignedIn]
+    [commitHistoryStore, cloudSignedIn, cloudUserEmail, savePendingDeletes]
   );
 
   const handleRenameHistory = useCallback((id: string, title: string) => {
