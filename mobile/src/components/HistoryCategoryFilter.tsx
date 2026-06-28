@@ -21,6 +21,7 @@ function FilterItem({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
       className="mr-5 pb-1 active:opacity-70"
     >
       <Text

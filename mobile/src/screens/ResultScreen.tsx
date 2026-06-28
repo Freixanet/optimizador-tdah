@@ -255,13 +255,13 @@ export default function ResultScreen() {
         <Text className="mt-6 text-2xl font-extrabold text-neutral-900 dark:text-neutral-100">{data.coreIdea}</Text>
         {takeaways.length ? <TakeawaysGlassCard items={takeaways} /> : null}
         <View className="mt-10 flex-row flex-wrap gap-3" style={styles.completionActions}>
-          <View style={styles.completionActionSlot}>
+          <View style={styles.completionActionFullWidthSlot}>
             <CompletionGlassButton
               label="Volver al mapa completado"
               onPress={() => session.setEssentialsReview(false)}
             />
           </View>
-          <View style={styles.completionActionSlot}>
+          <View style={styles.completionActionFullWidthSlot}>
             <CompletionGlassButton
               label="Volver al inicio"
               onPress={() => {
@@ -294,18 +294,7 @@ export default function ResultScreen() {
           {
             label: 'Repasar lo esencial',
             onPress: () => session.setEssentialsReview(true),
-          },
-          {
-            label: 'Volver al inicio',
-            onPress: () => {
-              session.setEssentialsReview(false);
-              session.goToStep(0);
-            },
-          },
-          {
-            label: 'Guardar ficha PDF',
-            icon: Download,
-            onPress: () => void session.handleDownloadPdf(),
+            fullWidth: true,
           },
           {
             label: 'Preguntar',
@@ -316,15 +305,31 @@ export default function ResultScreen() {
             },
           },
           {
+            label: 'Guardar ficha PDF',
+            icon: Download,
+            onPress: () => void session.handleDownloadPdf(),
+          },
+          {
+            label: 'Volver al inicio',
+            onPress: () => {
+              session.setEssentialsReview(false);
+              session.goToStep(0);
+            },
+          },
+          {
             label: 'Nuevo mapa',
             icon: SquarePen,
             variant: 'accent' as const,
             onPress: session.handleNewMap,
+            fullWidth: true,
           },
         ].map((action) => {
           const Icon = action.icon;
           return (
-            <View key={action.label} style={styles.completionActionSlot}>
+            <View
+              key={action.label}
+              style={action.fullWidth ? styles.completionActionFullWidthSlot : styles.completionActionSlot}
+            >
               <CompletionGlassButton
                 label={action.label}
                 onPress={action.onPress}
@@ -469,7 +474,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   completionActionSlot: {
-    width: '48%',
-    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: '45%',
+  },
+  completionActionFullWidthSlot: {
+    width: '100%',
   },
 });

@@ -115,6 +115,7 @@ export default function HistoryDrawer({
   };
 
   const panGesture = Gesture.Pan()
+    .enabled(open)
     .activeOffsetX([-12, 12])
     .failOffsetY([-16, 16])
     .onBegin(() => {
@@ -156,7 +157,13 @@ export default function HistoryDrawer({
       if (!shouldClose && !openShared.value) runOnJS(onOpen)();
     });
 
-  const mainGesture = panGesture;
+  const tapGesture = Gesture.Tap()
+    .enabled(open)
+    .onEnd(() => {
+      runOnJS(onClose)();
+    });
+
+  const mainGesture = Gesture.Exclusive(panGesture, tapGesture);
 
   const edgeOpenGesture = Gesture.Pan()
     .activeOffsetX(12)
@@ -287,7 +294,7 @@ export default function HistoryDrawer({
         >
           {children}
           <Animated.View
-            pointerEvents="none"
+            pointerEvents={open ? 'auto' : 'none'}
             style={[StyleSheet.absoluteFill, styles.mainLightenOverlay, mainLightenOverlayStyle]}
           />
         </Animated.View>
