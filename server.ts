@@ -1411,6 +1411,25 @@ async function startServer() {
     }
   });
 
+  app.post("/api/maps/:id/cheatsheet.prepare", (req, res) => {
+    const mapId = req.params.id;
+    const map = req.body?.map;
+
+    if (!map || typeof map !== "object" || map === null) {
+      return res.status(400).json({ error: "No se pudo preparar la ficha PDF." });
+    }
+
+    try {
+      buildCheatsheetModel(map as ActionMapData);
+    } catch (err) {
+      console.error("No se pudo preparar cheatsheet PDF:", err);
+      return res.status(400).json({ error: "No se pudo preparar la ficha PDF." });
+    }
+
+    mapCache.set(mapId, map as ActionMapData);
+    res.json({ ok: true });
+  });
+
   app.get("/api/maps/:id/cheatsheet.pdf", async (req, res) => {
     try {
       const mapId = req.params.id;

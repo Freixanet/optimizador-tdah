@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Share } from 'react-native';
 import {
   cacheDirectory,
-  EncodingType,
-  writeAsStringAsync,
+  deleteAsync,
+  downloadAsync,
+  readAsStringAsync,
 } from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import type { ActionMapData, MapIntent, SourceType, TransformRequest } from '../logic/contracts';
 import {
@@ -997,42 +998,68 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     const mapId = historyStore.activeId;
     if (!data || !mapId) return;
 
+    const filename = `${data.title || 'nucleo-cheatsheet'}.pdf`.replace(/[^\w.-]+/g, '-');
+    const directory = cacheDirectory;
+    if (!directory) {
+      setError('No se pudo acceder al almacenamiento local.');
+      return;
+    }
+    const uri = `${directory}${filename}`;
+
     try {
-      const response = await fetch(apiUrl(`/api/maps/${mapId}/cheatsheet.pdf`), {
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      const token = session?.access_token;
+
+      const prepareResponse = await fetch(apiUrl(`/api/maps/${mapId}/cheatsheet.prepare`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ map: data }),
       });
 
-      if (!response.ok) {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err?.error || 'No se pudo generar la ficha.');
+      if (!prepareResponse.ok) {
+        const err = (await prepareResponse.json().catch(() => ({}))) as { error?: string };
+        console.error('Prepare PDF failed:', prepareResponse.status, err);
+        throw new Error(err?.error || 'No se pudo preparar la ficha PDF.');
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = '';
-      const chunkSize = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
-      const base64 = globalThis.btoa(binary);
-      const filename = `${data.title || 'nucleo-cheatsheet'}.pdf`.replace(/[^\w.-]+/g, '-');
-      const directory = cacheDirectory;
-      if (!directory) throw new Error('No se pudo acceder al almacenamiento local.');
-      const uri = `${directory}${filename}`;
-      await writeAsStringAsync(uri, base64, {
-        encoding: EncodingType.Base64,
+
+      const result = await downloadAsync(
+        apiUrl(`/api/maps/${mapId}/cheatsheet.pdf`),
+        uri,
+        { headers }
+      );
+
+      if (result.status >= 400) {
+        let serverMessage = 'No se pudo generar la ficha PDF.';
+        try {
+          const errorText = await readAsStringAsync(uri);
+          const parsed = JSON.parse(errorText) as { error?: string };
+          if (typeof parsed?.error === 'string') serverMessage = parsed.error;
+        } catch {
+          // Keep default serverMessage when the error body is not JSON.
+        }
+        await deleteAsync(uri, { idempotent: true });
+        throw new Error(serverMessage);
+      }
+
+      const isSharingAvailable = await Sharing.isAvailableAsync();
+      if (!isSharingAvailable) {
+        throw new Error('La función de compartir no está disponible en este dispositivo.');
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        UTI: 'com.adobe.pdf',
+        dialogTitle: filename,
       });
 
-      await Share.share({
-        url: uri,
-        title: filename,
-        message: filename,
-      });
       stepHaptic();
     } catch (err) {
-      console.error(err);
+      console.error('Error al generar o compartir el PDF:', err);
       setError(err instanceof Error ? err.message : 'No se pudo generar la ficha PDF.');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
