@@ -17,6 +17,7 @@ import ComposerSendButton from '../../components/ComposerSendButton';
 import ComposerSurface from '../../components/ComposerSurface';
 import ComposerDock, { COMPOSER_DOCK_GAP, useComposerKeyboardLift } from '../../components/ComposerDock';
 import FloatingGlassButton from '../../components/FloatingGlassButton';
+import LoadingPreviewButton from '../../components/LoadingPreviewButton';
 import MenuTwoLines from '../../components/MenuTwoLines';
 import ModelChip from '../../components/ModelChip';
 import SessionErrorBanner from '../../components/SessionErrorBanner';
@@ -97,6 +98,7 @@ export default function ClassicInputScreen() {
                 <Text className="font-semibold text-neutral-800 dark:text-neutral-200">caos en mapas de acción</Text>
                 . Directo al punto.
               </Text>
+              <LoadingPreviewButton onPress={session.previewLoadingScreen} />
 
               </KeyboardDismissBackdrop>
             </ScrollView>

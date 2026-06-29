@@ -25,6 +25,7 @@ import { SIDEBAR_HEADER_BUTTON_SIZE } from '../components/sidebarLayout';
 import { useTheme } from '../context/ThemeContext';
 import { useAppSession } from '../context/AppSessionContext';
 import EngravedNucleoMark from '../components/EngravedNucleoMark';
+import LoadingPreviewButton from '../components/LoadingPreviewButton';
 import { useAttachMenuControl } from '../hooks/useAttachMenuControl';
 import { useDismissKeyboardOnScroll, KeyboardDismissBackdrop } from '../logic/keyboardDismiss';
 
@@ -86,7 +87,7 @@ export default function InputScreen() {
               className="flex-1 bg-transparent"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               keyboardShouldPersistTaps="handled"
-              alwaysBounceVertical={Platform.OS === 'ios'}
+              alwaysBounceVertical={false}
               onScrollBeginDrag={onScrollBeginDrag}
               scrollEnabled={!session.attachMenuOpen && !session.historyOpen}
               contentContainerClassName="items-center px-1"
@@ -103,6 +104,7 @@ export default function InputScreen() {
                     <Text className="mt-2.5 text-center text-[13px] leading-5 text-neutral-500 dark:text-neutral-500">
                       Pega texto, enlaces, vídeos o PDFs y conviértelos en un mapa guiado.
                     </Text>
+                    <LoadingPreviewButton onPress={session.previewLoadingScreen} />
                   </View>
                 ) : null}
                 </View>

@@ -146,6 +146,7 @@ type AppSessionContextValue = {
   syncReadingStep: (step: number) => void;
   toggleViewMode: () => void;
   handleCancelLoading: () => void;
+  previewLoadingScreen: () => void;
   handlePickImage: () => Promise<void>;
   handlePickCamera: () => Promise<void>;
   handlePickFile: () => Promise<void>;
@@ -237,6 +238,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledRef = useRef(false);
   const partialShownRef = useRef(false);
+  const loadingPreviewRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
   const isPdfGeneratingRef = useRef(false);
 
@@ -550,6 +552,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     abortControllerRef.current = null;
     setIsStreamGenerating(false);
 
+    if (loadingPreviewRef.current) {
+      loadingPreviewRef.current = false;
+      setPhase('input');
+      partialShownRef.current = false;
+      return;
+    }
+
     if (partialShownRef.current) {
       setTransformIncomplete(true);
       setPhase('result');
@@ -560,6 +569,20 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     }
 
     partialShownRef.current = false;
+  }, []);
+
+  const previewLoadingScreen = useCallback(() => {
+    transformCancelledRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsStreamGenerating(false);
+    loadingPreviewRef.current = true;
+    partialShownRef.current = false;
+    setError(null);
+    setTransformIncomplete(false);
+    setAttachMenuOpen(false);
+    setPhase('loading');
+    stepHaptic();
   }, []);
 
   const handleAttachmentError = useCallback((err: unknown) => {
@@ -1119,6 +1142,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       syncReadingStep,
       toggleViewMode,
       handleCancelLoading,
+      previewLoadingScreen,
       handlePickImage,
       handlePickCamera,
       handlePickFile,
@@ -1177,6 +1201,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       syncReadingStep,
       toggleViewMode,
       handleCancelLoading,
+      previewLoadingScreen,
       handlePickImage,
       handlePickCamera,
       handlePickFile,
