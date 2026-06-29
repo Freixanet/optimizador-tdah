@@ -308,6 +308,9 @@ export default function ResultScreen() {
             label: 'Guardar ficha PDF',
             icon: Download,
             onPress: () => void session.handleDownloadPdf(),
+            disabled: session.isPdfGenerating,
+            loading: session.isPdfGenerating,
+            loadingLabel: 'Preparando PDF…',
           },
           {
             label: 'Volver al inicio',
@@ -336,6 +339,9 @@ export default function ResultScreen() {
                 onPress={action.onPress}
                 icon={Icon ? <Icon size={16} color={action.variant === 'accent' ? '#fff' : '#525252'} /> : undefined}
                 variant={action.variant ?? 'neutral'}
+                disabled={action.disabled}
+                loading={action.loading}
+                loadingLabel={action.loadingLabel}
               />
             </View>
           );

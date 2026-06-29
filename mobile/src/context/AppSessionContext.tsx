@@ -162,6 +162,7 @@ type AppSessionContextValue = {
   setEssentialsReview: (value: boolean) => void;
   handleDownloadPdf: () => Promise<void>;
   isStreamGenerating: boolean;
+  isPdfGenerating: boolean;
   transformIncomplete: boolean;
   dismissTransformIncomplete: () => void;
   handleSignOut: () => Promise<void>;
@@ -230,11 +231,13 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   );
   const [essentialsReview, setEssentialsReview] = useState(false);
   const [isStreamGenerating, setIsStreamGenerating] = useState(false);
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const transformCancelledRef = useRef(false);
   const partialShownRef = useRef(false);
   const historyStoreRef = useRef(historyStore);
+  const isPdfGeneratingRef = useRef(false);
 
   const pendingDeletesRef = useRef<string[]>([]);
 
@@ -995,6 +998,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   }, [currentStep, persistSessionState, viewAll]);
 
   const handleDownloadPdf = useCallback(async () => {
+    if (isPdfGeneratingRef.current) return;
     const mapId = historyStore.activeId;
     if (!data || !mapId) return;
 
@@ -1006,6 +1010,8 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     }
     const uri = `${directory}${filename}`;
 
+    isPdfGeneratingRef.current = true;
+    setIsPdfGenerating(true);
     try {
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session?.access_token;
@@ -1062,6 +1068,9 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       console.error('Error al generar o compartir el PDF:', err);
       setError(err instanceof Error ? err.message : 'No se pudo generar la ficha PDF.');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      isPdfGeneratingRef.current = false;
+      setIsPdfGenerating(false);
     }
   }, [data, historyStore.activeId]);
 
@@ -1128,6 +1137,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       setEssentialsReview,
       handleDownloadPdf,
       isStreamGenerating,
+      isPdfGenerating,
       transformIncomplete,
       dismissTransformIncomplete,
       handleSignOut,
@@ -1184,6 +1194,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       essentialsReview,
       handleDownloadPdf,
       isStreamGenerating,
+      isPdfGenerating,
       transformIncomplete,
       dismissTransformIncomplete,
       handleSignOut,

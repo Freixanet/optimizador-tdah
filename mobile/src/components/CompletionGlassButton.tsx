@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { RADII } from '@shared/uiTokens';
 import GlassSurface from './GlassSurface';
 import { useTheme } from '../context/ThemeContext';
@@ -10,6 +10,9 @@ type CompletionGlassButtonProps = {
   icon?: React.ReactNode;
   variant?: 'neutral' | 'accent';
   accessibilityLabel?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
 };
 
 export default function CompletionGlassButton({
@@ -18,6 +21,9 @@ export default function CompletionGlassButton({
   icon,
   variant = 'neutral',
   accessibilityLabel,
+  disabled = false,
+  loading = false,
+  loadingLabel,
 }: CompletionGlassButtonProps) {
   const { isDark } = useTheme();
   const isAccent = variant === 'accent';
@@ -26,12 +32,26 @@ export default function CompletionGlassButton({
   const accentOverlay = isDark ? 'bg-indigo-500/32' : 'bg-indigo-600/28';
   const neutralOverlay = isDark ? 'bg-white/[0.05]' : 'bg-white/45';
 
+  const showLoading = loading;
+  const isButtonDisabled = disabled || loading;
+
+  const spinnerColor = isAccent
+    ? '#ffffff'
+    : isDark
+      ? '#d4d4d4'
+      : '#525252';
+
   return (
     <Pressable
       onPress={onPress}
+      disabled={isButtonDisabled}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      style={({ pressed }) => [styles.pressable, pressed ? styles.pressed : null]}
+      accessibilityLabel={accessibilityLabel ?? (showLoading ? (loadingLabel ?? label) : label)}
+      style={({ pressed }) => [
+        styles.pressable,
+        pressed && !isButtonDisabled ? styles.pressed : null,
+        isButtonDisabled ? styles.disabled : null,
+      ]}
     >
       <GlassSurface
         liquid
@@ -43,7 +63,11 @@ export default function CompletionGlassButton({
         contentClassName="w-full items-center justify-center"
       >
         <View style={styles.content}>
-          {icon}
+          {showLoading ? (
+            <ActivityIndicator size="small" color={spinnerColor} />
+          ) : (
+            icon
+          )}
           <Text
             className={
               isAccent
@@ -51,7 +75,7 @@ export default function CompletionGlassButton({
                 : 'text-center font-semibold text-neutral-700 dark:text-neutral-300'
             }
           >
-            {label}
+            {showLoading ? (loadingLabel ?? label) : label}
           </Text>
         </View>
       </GlassSurface>
@@ -81,5 +105,8 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.88,
     transform: [{ scale: 0.98 }],
+  },
+  disabled: {
+    opacity: 0.55,
   },
 });
