@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
-import { Text, View } from 'react-native';
+import React, { useCallback, useEffect } from 'react';
+import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   Easing,
   SharedValue,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -13,6 +14,14 @@ import MenuTwoLines from './MenuTwoLines';
 import { SIDEBAR_HEADER_BUTTON_SIZE } from './sidebarLayout';
 import { useTheme } from '../context/ThemeContext';
 
+/** Fallback for nav row height before onLayout (py-2.5 + 36px button). */
+export const READING_PROGRESS_BAR_HEIGHT = 60;
+export const READING_PROGRESS_LINE_HEIGHT = 8;
+
+export function readingProgressBarTotalHeight(hideProgressLine?: boolean): number {
+  return READING_PROGRESS_BAR_HEIGHT + (hideProgressLine ? 0 : READING_PROGRESS_LINE_HEIGHT);
+}
+
 type ReadingProgressBarProps = {
   viewAll: boolean;
   isComplete: boolean;
@@ -22,6 +31,9 @@ type ReadingProgressBarProps = {
   onToggleViewMode?: () => void;
   /** UI-thread scroll ratio for fluid view-all progress (0–1). */
   scrollProgressShared?: SharedValue<number>;
+  headerVisibleShared?: SharedValue<boolean>;
+  /** Intro step-by-step only — progress line omitted entirely. */
+  hideProgressLine?: boolean;
 };
 
 export default function ReadingProgressBar({
@@ -32,10 +44,13 @@ export default function ReadingProgressBar({
   onToggleSidebar,
   onToggleViewMode,
   scrollProgressShared,
+  headerVisibleShared,
+  hideProgressLine,
 }: ReadingProgressBarProps) {
   const { isDark } = useTheme();
   const navIconColor = isDark ? '#d4d4d4' : '#525252';
   const stepProgressValue = useSharedValue(stepProgress / 100);
+  const navRowHeight = useSharedValue(READING_PROGRESS_BAR_HEIGHT);
 
   useEffect(() => {
     if (viewAll) return;
@@ -45,10 +60,77 @@ export default function ReadingProgressBar({
     });
   }, [stepProgress, stepProgressValue, viewAll]);
 
+  const handleNavRowLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { height } = event.nativeEvent.layout;
+      if (height > 0) {
+        navRowHeight.value = height;
+      }
+    },
+    [navRowHeight]
+  );
+
   const barStyle = useAnimatedStyle(() => {
     const ratio = viewAll && scrollProgressShared ? scrollProgressShared.value : stepProgressValue.value;
     return {
       width: `${Math.min(100, Math.max(0, ratio * 100))}%`,
+    };
+  });
+
+  const shellStyle = useAnimatedStyle(() => {
+    const navH = navRowHeight.value;
+    const lineH = READING_PROGRESS_LINE_HEIGHT;
+
+    if (!headerVisibleShared) {
+      return { height: hideProgressLine ? navH : lineH };
+    }
+
+    if (hideProgressLine) {
+      return {
+        height: withTiming(headerVisibleShared.value ? navH : 0, { duration: 250 }),
+      };
+    }
+
+    return {
+      height: withTiming(headerVisibleShared.value ? navH + lineH : lineH, { duration: 250 }),
+    };
+  });
+
+  const navAnimatedStyle = useAnimatedStyle(() => {
+    if (!headerVisibleShared) {
+      return { transform: [{ translateY: 0 }], opacity: 1 };
+    }
+
+    const offset = navRowHeight.value;
+    return {
+      transform: [
+        {
+          translateY: withTiming(headerVisibleShared.value ? 0 : -offset, {
+            duration: 250,
+          }),
+        },
+      ],
+      opacity: withTiming(headerVisibleShared.value ? 1 : 0, { duration: 200 }),
+    };
+  });
+
+  const navAnimatedProps = useAnimatedProps(() => {
+    if (!headerVisibleShared) {
+      return { pointerEvents: 'auto' as const };
+    }
+    return {
+      pointerEvents: headerVisibleShared.value ? ('auto' as const) : ('none' as const),
+    };
+  });
+
+  const progressPositionStyle = useAnimatedStyle(() => {
+    if (hideProgressLine || !headerVisibleShared) {
+      return { top: 0 };
+    }
+
+    const navH = navRowHeight.value;
+    return {
+      top: withTiming(headerVisibleShared.value ? navH : 0, { duration: 250 }),
     };
   });
 
@@ -58,44 +140,59 @@ export default function ReadingProgressBar({
     : 'text-neutral-600 dark:text-neutral-300';
 
   return (
-    <View className="shrink-0 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-white/5">
-      <View className="flex-row items-center justify-between gap-3 px-3 py-2.5">
-        <View className="min-w-0 flex-1 flex-row items-center gap-4">
-          <FloatingGlassButton
-            onPress={onToggleSidebar}
-            accessibilityLabel="Abrir navegación"
-            shape="circle"
-            size={SIDEBAR_HEADER_BUTTON_SIZE}
-          >
-            <MenuTwoLines size={17} color={navIconColor} />
-          </FloatingGlassButton>
-          <Text
-            className="flex-1 text-sm font-bold text-neutral-800 dark:text-neutral-100"
-            numberOfLines={1}
-          >
-            {progressLabel}
-          </Text>
-        </View>
-        {!isComplete && onToggleViewMode ? (
-          <FloatingGlassButton
-            onPress={onToggleViewMode}
-            accessibilityLabel={viewAll ? 'Cambiar a paso a paso' : 'Cambiar a vista completa'}
-            shape="rounded"
-          >
-            {viewAll ? <List size={14} color={viewModeIconColor} /> : <Layers size={14} color={viewModeIconColor} />}
-            <Text className={`text-[11px] font-semibold ${viewModeLabelClass}`}>
-              {viewAll ? 'Paso a paso' : 'Vista completa'}
+    <Animated.View
+      style={shellStyle}
+      className="absolute left-0 right-0 top-0 z-50 overflow-hidden border-b border-neutral-200 dark:border-white/5"
+    >
+      <Animated.View
+        animatedProps={navAnimatedProps}
+        style={navAnimatedStyle}
+        onLayout={handleNavRowLayout}
+        className="bg-neutral-50 dark:bg-neutral-900"
+      >
+        <View className="flex-row items-center justify-between gap-3 px-3 py-2.5">
+          <View className="min-w-0 flex-1 flex-row items-center gap-4">
+            <FloatingGlassButton
+              onPress={onToggleSidebar}
+              accessibilityLabel="Abrir navegación"
+              shape="circle"
+              size={SIDEBAR_HEADER_BUTTON_SIZE}
+            >
+              <MenuTwoLines size={17} color={navIconColor} />
+            </FloatingGlassButton>
+            <Text
+              className="flex-1 text-sm font-bold text-neutral-800 dark:text-neutral-100"
+              numberOfLines={1}
+            >
+              {progressLabel}
             </Text>
-          </FloatingGlassButton>
-        ) : null}
-      </View>
-      <View className="h-2 bg-neutral-200 dark:bg-neutral-800">
-        <Animated.View
-          style={barStyle}
-          className="h-full bg-indigo-600 dark:bg-indigo-500 rounded-r-full"
-          accessibilityRole="progressbar"
-        />
-      </View>
-    </View>
+          </View>
+          {!isComplete && onToggleViewMode ? (
+            <FloatingGlassButton
+              onPress={onToggleViewMode}
+              accessibilityLabel={viewAll ? 'Cambiar a paso a paso' : 'Cambiar a vista completa'}
+              shape="rounded"
+            >
+              {viewAll ? <List size={14} color={viewModeIconColor} /> : <Layers size={14} color={viewModeIconColor} />}
+              <Text className={`text-[11px] font-semibold ${viewModeLabelClass}`}>
+                {viewAll ? 'Paso a paso' : 'Vista completa'}
+              </Text>
+            </FloatingGlassButton>
+          ) : null}
+        </View>
+      </Animated.View>
+
+      {!hideProgressLine ? (
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0 }, progressPositionStyle]}>
+          <View className="h-2 bg-neutral-200 dark:bg-neutral-800">
+            <Animated.View
+              style={barStyle}
+              className="h-full bg-indigo-600 dark:bg-indigo-500 rounded-r-full"
+              accessibilityRole="progressbar"
+            />
+          </View>
+        </Animated.View>
+      ) : null}
+    </Animated.View>
   );
 }

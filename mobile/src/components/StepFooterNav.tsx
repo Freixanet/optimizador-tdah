@@ -12,6 +12,7 @@ type StepFooterNavProps = {
 export default function StepFooterNav({ completeLabel = 'Completar mapa' }: StepFooterNavProps) {
   const session = useAppSession();
   const showStepFooter = !session.viewAll && !session.isComplete;
+  const streamDimmed = session.isStreamGenerating;
 
   if (!showStepFooter) return null;
 
@@ -20,7 +21,11 @@ export default function StepFooterNav({ completeLabel = 'Completar mapa' }: Step
       edges={['bottom']}
       className="border-t border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900"
     >
-      <View className="py-4 px-7">
+      <View
+        className="py-4 px-7"
+        style={streamDimmed ? { opacity: 0.5 } : undefined}
+        pointerEvents={streamDimmed ? 'none' : 'auto'}
+      >
         {session.currentStep === 0 ? (
           <StepFooterGlassButton
             variant="primary"

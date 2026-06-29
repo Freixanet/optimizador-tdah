@@ -4,8 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   FadeIn,
   FadeOut,
-  runOnJS,
-  useAnimatedScrollHandler,
   useSharedValue,
 } from 'react-native-reanimated';
 import {
@@ -16,6 +14,7 @@ import {
 import AppIcon from '../../components/AppIcon';
 import FloatingGlassButton from '../../components/FloatingGlassButton';
 import ReadingProgressBar from '../../components/ReadingProgressBar';
+import { useMapHeaderAutoHide } from '../../hooks/useMapHeaderAutoHide';
 import SourceMetadataGlassCard from '../../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../../components/StepContentBlocks';
 import StepFooterNav from '../../components/StepFooterNav';
@@ -43,7 +42,16 @@ const VIEW_ALL_COMPLETION_SECTION = 'pt-8 pb-8 border-t border-neutral-200 dark:
 export default function ClassicResultScreen() {
   const session = useAppSession();
   const { data } = session;
+
   const scrollProgress = useSharedValue(0);
+
+  const hideProgressLine =
+    !session.viewAll && !session.isComplete && session.currentStep === 0;
+
+  const mapHeaderResetKey = session.viewAll
+    ? `${session.viewAll}:${session.isComplete}`
+    : `${session.viewAll}:${session.currentStep}:${session.isComplete}`;
+
   const syncReadingStep = useCallback(
     (step: number) => session.syncReadingStep(step),
     [session]
@@ -53,18 +61,6 @@ export default function ClassicResultScreen() {
     totalSteps: session.totalSteps,
     onStepChange: syncReadingStep,
   });
-
-  useEffect(() => {
-    if (!session.viewAll) resetSpy();
-  }, [resetSpy, session.viewAll]);
-
-  useEffect(() => {
-    if (!session.viewAll) {
-      scrollProgress.value = 0;
-    }
-  }, [scrollProgress, session.viewAll]);
-
-  const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps), [data?.steps]);
 
   const reportScrollSpy = useCallback(
     (scrollY: number, contentHeight: number) => {
@@ -80,17 +76,25 @@ export default function ClassicResultScreen() {
     [handleScroll, session.viewAll]
   );
 
-  const scrollHandler = useAnimatedScrollHandler(
-    {
-      onScroll: (event) => {
-        const maxScroll = event.contentSize.height - event.layoutMeasurement.height;
-        scrollProgress.value =
-          maxScroll <= 0 ? 1 : Math.min(1, Math.max(0, event.contentOffset.y / maxScroll));
-        runOnJS(reportScrollSpy)(event.contentOffset.y, event.contentSize.height);
-      },
-    },
-    [reportScrollSpy]
-  );
+  const { scrollRef, headerVisible, handleMapMetaAnchorLayout, scrollHandler } = useMapHeaderAutoHide({
+    hideProgressLine,
+    mapKey: session.historyStore.activeId ?? 'none',
+    resetKey: mapHeaderResetKey,
+    scrollProgress,
+    onScrollReport: reportScrollSpy,
+  });
+
+  useEffect(() => {
+    if (!session.viewAll) resetSpy();
+  }, [resetSpy, session.viewAll]);
+
+  useEffect(() => {
+    if (!session.viewAll) {
+      scrollProgress.value = 0;
+    }
+  }, [scrollProgress, session.viewAll]);
+
+  const totalMinutes = useMemo(() => parseTotalMinutes(data?.steps), [data?.steps]);
 
   const stepKey = useMemo(() => {
     const parts = [
@@ -251,20 +255,24 @@ export default function ClassicResultScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-neutral-50 dark:bg-neutral-900" edges={['top', 'left', 'right']}>
+      <View className="flex-1 relative overflow-hidden">
       <ReadingProgressBar
         viewAll={session.viewAll}
         isComplete={session.isComplete}
         stepProgress={session.stepProgress}
         progressLabel={session.progressLabel}
         scrollProgressShared={scrollProgress}
+        headerVisibleShared={headerVisible}
+        hideProgressLine={hideProgressLine}
         onToggleSidebar={() => session.toggleHistoryDrawer()}
         onToggleViewMode={session.isComplete ? undefined : session.toggleViewMode}
       />
 
       <View className="flex-1">
         <Animated.ScrollView
+          ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="px-5 py-5 pb-8"
+          contentContainerClassName="px-5 pt-[76px] pb-32"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={!isIntroStep}
           scrollEnabled={!session.historyOpen}
@@ -273,9 +281,11 @@ export default function ClassicResultScreen() {
           scrollEventThrottle={16}
         >
           <View className="mb-12">
-            <Text className="text-xs font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
-              {data.title}
-            </Text>
+            <View onLayout={handleMapMetaAnchorLayout} collapsable={false}>
+              <Text className="text-xs font-bold uppercase tracking-widest text-neutral-500 dark:text-neutral-400">
+                {data.title}
+              </Text>
+            </View>
           </View>
 
           <Animated.View
@@ -316,6 +326,7 @@ export default function ClassicResultScreen() {
 
         <StepFooterNav completeLabel="Finalizar" />
       </View>
+    </View>
     </SafeAreaView>
   );
 }
