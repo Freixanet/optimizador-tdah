@@ -112,6 +112,7 @@ const MAP_CACHE_LIMIT = 120;
 const mapCache = new Map<string, ActionMapData>();
 
 const READING_WORDS_PER_MINUTE = 200;
+const MAX_OUTPUT_TOKENS_FAST = 6144;
 const MAX_OUTPUT_TOKENS_STANDARD = 8192;
 const MAX_OUTPUT_TOKENS_DEEP = 32768;
 
@@ -136,7 +137,9 @@ function resolveTransformModelChain(
 }
 
 function maxOutputTokensForDepth(depth?: TransformRequest["depth"]): number {
-  return depth === "profundo" ? MAX_OUTPUT_TOKENS_DEEP : MAX_OUTPUT_TOKENS_STANDARD;
+  if (depth === "profundo") return MAX_OUTPUT_TOKENS_DEEP;
+  if (depth === "rapido") return MAX_OUTPUT_TOKENS_FAST;
+  return MAX_OUTPUT_TOKENS_STANDARD;
 }
 
 // Generate content, automatically falling back to the next model in the chain
@@ -701,28 +704,98 @@ const schema = {
 
 const SYSTEM_PROMPT = `Eres Núcleo, una capa de comprensión fiel, adaptable y adulta.
 
-Transformas cualquier fuente en una lectura clara para uno de estos objetivos:
-- understand: comprender con contexto, tesis, argumentos, evidencias y matices.
-- study: estudiar con conceptos, relaciones, preguntas de recuperación y repaso.
-- apply: aplicar con decisiones, pasos, condiciones, riesgos y siguiente acción.
+Transformas fuentes en mapas claros según el intent y la profundidad activos indicados en el prompt del usuario (understand, study o apply; rapido, estandar o profundo).
 
 Reglas obligatorias:
-1. No infantilices. Escribe con claridad adulta, no con tono de coach ni celebración exagerada.
-2. No inventes. Toda inferencia debe estar apoyada por la fuente proporcionada.
-3. No comprimas en exceso. Conserva matices, límites, condiciones y excepciones relevantes.
-4. Cada bloque "text" debe contener contenido útil y específico.
-5. La cantidad de pasos debe adaptarse al material. No fuerces un resumen corto si la fuente necesita más desarrollo.
+1. Sigue siempre el CONTRATO ACTIVO DE INTENCIÓN y el CONTRATO ACTIVO DE PROFUNDIDAD del prompt del usuario. Prevén sobre reglas genéricas de este mensaje cuando entren en conflicto.
+2. No mezcles objetivos de apply (checklists, acciones concretas) si el intent activo es understand, salvo que la fuente lo requiera explícitamente. No expandas en profundidad exhaustiva si depth activo es rapido.
+3. No infantilices. Escribe con claridad adulta, no con tono de coach ni celebración exagerada.
+4. No inventes. Toda inferencia debe estar apoyada por la fuente proporcionada.
+5. Cada bloque "text" debe contener contenido útil y específico.
 6. Usa referencias siempre que puedas. Si la fuente no ofrece una ubicación exacta, usa el mejor localizador honesto disponible.
 7. La capa "tldr" orienta; no sustituye la lectura completa.
 8. Si falta parte del contenido, señálalo en "coverage" o "sourceMetadata.limitations" con honestidad.
-9. Los bloques callout deben usar un label editorial sobrio: 'Idea clave', 'Matiz', 'Ejemplo', 'Precaución' o 'Para aplicarlo'.
+9. Los bloques callout deben usar labels editoriales sobrios acordes al intent activo: 'Idea clave', 'Matiz', 'Ejemplo', 'Precaución' o 'Para aplicarlo'.
 10. Devuelve solo JSON válido compatible con el esquema pedido.
-11. El tamaño de la lectura lo decide la densidad de información relevante, no la longitud del texto: filtra el ruido y cubre todas las ideas relevantes. La fidelidad y la cobertura completa tienen prioridad sobre la brevedad. No omitas ninguna idea, dato, matiz, condición ni ejemplo relevante; si algo no cabe, declararlo en coverage.limitations.`;
+11. Filtra el ruido y cubre las ideas relevantes según el contrato de profundidad activo. La cobertura completa tiene prioridad salvo cuando depth activo sea rapido; en rapido debes sintetizar y agrupar, declarando omisiones en coverage.limitations si procede.
+12. El campo "intent" en el JSON debe coincidir exactamente con el intent activo del contrato (understand, study o apply).`;
 
 function intentLabel(intent: MapIntent) {
   if (intent === "study") return "Estudiar";
   if (intent === "apply") return "Aplicar";
   return "Comprender";
+}
+
+function buildIntentGuide(intent: MapIntent): string {
+  if (intent === "apply") {
+    return [
+      "CONTRATO ACTIVO DE INTENCIÓN (apply — Aplicar):",
+      "Objetivo principal: aplicación práctica inmediata.",
+      "Prioriza pasos accionables, decisiones concretas, checklist, errores a evitar y próximos pasos.",
+      "Transforma conceptos de la fuente en acciones que el lector pueda ejecutar.",
+      "Usa listas con kind 'action' cuando encaje; prioriza callouts 'Para aplicarlo', 'Precaución' y listas accionables.",
+      "Evita teoría extensa sin traducirla a qué hacer; cada paso debe dejar claro qué acción, condición o decisión implica.",
+      "completionCard.promptQuestion debe invitar a la siguiente acción concreta (qué probar, qué decidir, qué hacer ahora).",
+    ].join("\n");
+  }
+
+  if (intent === "study") {
+    return [
+      "CONTRATO ACTIVO DE INTENCIÓN (study — Estudiar):",
+      "Objetivo principal: retención, repaso y dominio del material.",
+      "Prioriza conceptos clave, relaciones entre ideas, preguntas de recuperación y guías de repaso.",
+      "Incluye matices y definiciones precisas útiles para memorizar y reconectar después.",
+      "Usa callouts 'Idea clave', 'Matiz' y 'Ejemplo'; puedes incluir preguntas orientadas al repaso en prose o listas.",
+      "completionCard.promptQuestion debe invitar a repasar, autoevaluar o profundizar un concepto concreto.",
+    ].join("\n");
+  }
+
+  return [
+    "CONTRATO ACTIVO DE INTENCIÓN (understand — Entender):",
+    "Objetivo principal: comprensión profunda del material.",
+    "Prioriza explicación conceptual, tesis, relación causa/efecto, matices y ejemplos explicativos.",
+    "Evita convertir el mapa en checklist o manual de acciones salvo que la fuente lo exija explícitamente.",
+    "Usa callouts 'Idea clave', 'Matiz' y 'Ejemplo'; limita listas kind 'action' salvo que sean inherentes a la fuente.",
+    "completionCard.promptQuestion debe invitar a repasar comprensión, conectar conceptos o explorar el siguiente matiz.",
+  ].join("\n");
+}
+
+function buildDepthGuide(depth?: TransformRequest["depth"]): string {
+  const resolvedDepth = depth === "rapido" || depth === "profundo" ? depth : "estandar";
+
+  if (resolvedDepth === "rapido") {
+    return [
+      "CONTRATO ACTIVO DE PROFUNDIDAD (rapido — Rápido):",
+      "Resultado breve y escaneable; prevalece sobre instrucciones genéricas de cobertura exhaustiva.",
+      "Para fuentes cortas/medias: 3–5 pasos como objetivo.",
+      "Para fuentes largas: agrupa agresivamente; no intentes cubrirlo todo — sintetiza lo imprescindible.",
+      "Prioriza núcleo (coreIdea, tldr) y conceptos imprescindibles; knowledgeSections mínimas (0–2 entradas cortas).",
+      "Evita sublistas extensas y bloques prose largos; frases cortas; no más detalle del necesario.",
+      "Si omites material por síntesis, decláralo en coverage.limitations.",
+    ].join("\n");
+  }
+
+  if (resolvedDepth === "profundo") {
+    return [
+      "CONTRATO ACTIVO DE PROFUNDIDAD (profundo — Profundo):",
+      "Análisis completo; prevalece sobre brevedad.",
+      "Para fuentes cortas/medias: 8–12+ pasos si el contenido lo permite.",
+      "Desarrolla matices, límites, ejemplos e implicaciones; no colapses fuentes densas.",
+      "Cada paso debe tener desarrollo sustancial (varios bloques prose/callout/list cuando haga falta).",
+      "Para fuentes largas (libro, PDF extenso, transcripción): número de pasos proporcional a unidades relevantes (decenas si el material lo justifica).",
+      "knowledgeSections más ricas; granularidad fina: no fusiones unidades que el lector necesitaría separar.",
+      "Si algo no cabe, regístralo en coverage.limitations; no descartes en silencio.",
+    ].join("\n");
+  }
+
+  return [
+    "CONTRATO ACTIVO DE PROFUNDIDAD (estandar — Estándar):",
+    "Equilibrio entre cobertura y brevedad.",
+    "Para fuentes cortas/medias: 5–8 pasos como objetivo.",
+    "Cubre lo importante sin ser exhaustivo; una unidad principal por paso.",
+    "Ejemplos solo donde clarifiquen; granularidad media.",
+    "knowledgeSections moderadas; si omites algo relevante por espacio, decláralo en coverage.limitations.",
+  ].join("\n");
 }
 
 function cacheMap(mapId: string | undefined, map: ActionMapData) {
@@ -835,7 +908,7 @@ function normalizeMapData(
       fallback.existingCategories ?? []
     ),
     tags: normalizeTags(parsed?.suggestedTags ?? parsed?.tags),
-    intent: parsed?.intent === "study" || parsed?.intent === "apply" ? parsed.intent : fallback.intent,
+    intent: fallback.intent,
     outputLanguage: String(parsed?.outputLanguage || fallback.outputLanguage),
     mapVersion: Number.isFinite(parsed?.mapVersion) ? Number(parsed.mapVersion) : 2,
     sourceMetadata: {
@@ -953,19 +1026,26 @@ function buildTransformPrompt({
               ? "Si es una página web, conserva tesis, encabezados, evidencias, tablas y citas relevantes."
               : "Si es texto o archivo textual, detecta estructura, bloques temáticos y relaciones entre ideas.";
 
-  const resolvedDepth = depth === 'rapido' || depth === 'profundo' ? depth : 'estandar';
-  const depthGuide =
-    resolvedDepth === 'rapido'
-      ? 'Agrupa más las unidades: menos pasos, pero sin perder ninguna idea esencial.'
-      : resolvedDepth === 'profundo'
-        ? [
-            'MODO PROFUNDO — prioridad máxima de cobertura y desarrollo.',
-            'NO colapses una fuente larga (libro, PDF extenso, transcripción larga) en pocos pasos: el número de pasos debe ser proporcional a las unidades relevantes del material.',
-            'Cada paso debe corresponder a una unidad, sección, argumento o procedimiento distinto con desarrollo sustancial (varios bloques prose/callout/list por paso).',
-            'Para libros y documentos extensos se esperan muchos pasos (decenas si el material lo justifica), no un resumen ejecutivo de 3-6 pasos.',
-            'Granularidad fina: no comprimas ni fusiones unidades que el lector necesitaría separar para estudiar o aplicar.',
-          ].join(' ')
-        : 'Granularidad equilibrada: una unidad principal por paso.';
+  const resolvedDepth = depth === "rapido" || depth === "profundo" ? depth : "estandar";
+  const intentGuide = buildIntentGuide(intent);
+  const depthGuide = buildDepthGuide(resolvedDepth);
+
+  const coverageRule =
+    resolvedDepth === "rapido"
+      ? "Si sintetizas u omites material por el contrato rapido, regístralo explícitamente en coverage.limitations; nunca lo descartes en silencio."
+      : "NO omitas ninguna unidad relevante según el contrato de profundidad activo. Si por límite de espacio no cabe todo lo relevante, regístralo explícitamente en coverage.limitations; nunca lo descartes en silencio.";
+
+  const knowledgeSectionsRule =
+    resolvedDepth === "rapido"
+      ? "En 'knowledgeSections' usa 0–2 entradas breves como máximo; solo panorama imprescindible."
+      : resolvedDepth === "profundo"
+        ? "En 'knowledgeSections' desarrolla un panorama rico de las secciones mayores con summaries útiles."
+        : "En 'knowledgeSections' resume las secciones mayores con granularidad media.";
+
+  const tldrRule =
+    resolvedDepth === "rapido"
+      ? "En 'tldr' entrega de 3 a 4 puntos breves."
+      : "En 'tldr' entrega de 3 a 6 puntos.";
 
   const categoryOptions = [
     ...DEFAULT_MAP_CATEGORIES,
@@ -978,7 +1058,15 @@ function buildTransformPrompt({
   ];
 
   return [
-    `Objetivo del lector: ${intentLabel(intent)} (${intent}).`,
+    "Los siguientes contratos activos prevalecen sobre cualquier instrucción genérica de cobertura, longitud o tono.",
+    "",
+    intentGuide,
+    "",
+    depthGuide,
+    "",
+    `Intent activo confirmado: ${intentLabel(intent)} (${intent}).`,
+    `Profundidad activa confirmada: ${resolvedDepth}.`,
+    `El campo JSON "intent" debe ser exactamente "${intent}".`,
     `Idioma de salida: ${outputLanguage}.`,
     outputLanguage === "es"
       ? "Debes escribir TODO el mapa en español: title, coreIdea, coreSupport, tldr, knowledgeSections, shortNav, steps, completionCard y labels editoriales. Solo puedes dejar una cita textual en otro idioma si es imprescindible y debe ir claramente marcada como cita."
@@ -996,14 +1084,13 @@ function buildTransformPrompt({
       : "",
     `Si no tienes confianza clara sobre la categoría, usa "${FALLBACK_MAP_CATEGORY}".`,
     "La coreIdea debe ser una frase corta y memorable; evita párrafos, matices largos o dos ideas en una.",
-    "En 'tldr' entrega de 3 a 6 puntos.",
-    "En 'knowledgeSections' resume las secciones mayores.",
+    tldrRule,
+    knowledgeSectionsRule,
     "PRIMERO filtra el ruido: ignora relleno, repeticiones, divagaciones, saludos, autopromoción, patrocinios, navegación web y texto boilerplate. El ruido NO genera pasos.",
-    "Identifica las UNIDADES de información relevante (ideas, tesis, argumentos, conceptos, procedimientos, secciones distintas). El número de pasos y de knowledgeSections debe ser proporcional al número de unidades relevantes, NO a la longitud del texto. Una fuente larga pero ruidosa puede tener pocos pasos; una fuente corta y densa puede tener bastantes.",
-    "Agrupa unidades afines en un paso de tamaño digerible (una idea principal bien desarrollada por paso). Evita pasos sobrecargados con muchas ideas distintas y evita pasos triviales de relleno.",
-    "NO omitas ninguna unidad relevante. Si por límite de espacio no cabe todo lo relevante, regístralo explícitamente en coverage.limitations; nunca lo descartes en silencio.",
-    depthGuide,
-    "Usa 'completionCard' para una ficha final recordable y descargable.",
+    "Identifica las UNIDADES de información relevante (ideas, tesis, argumentos, conceptos, procedimientos, secciones distintas). El número de pasos y de knowledgeSections debe ajustarse al contrato de profundidad activo y al número de unidades relevantes.",
+    "Agrupa unidades afines en pasos de tamaño digerible según el contrato activo. Evita pasos sobrecargados con muchas ideas distintas y evita pasos triviales de relleno.",
+    coverageRule,
+    "Usa 'completionCard' para una ficha final recordable y descargable, alineada con el intent activo.",
   ]
     .filter(Boolean)
     .join("\n");
