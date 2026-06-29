@@ -277,6 +277,92 @@ function writeStreamEvent(res: express.Response, event: {
   flushResponse(res);
 }
 
+function shouldLogTransformDebug(): boolean {
+  return process.env.TRANSFORM_DEBUG === "1";
+}
+
+function safeTransformDebugLog(label: string, payload: Record<string, unknown>): void {
+  if (!shouldLogTransformDebug()) return;
+  console.log(label, JSON.stringify(payload));
+}
+
+function truncateDebugText(value: string | undefined, max = 120): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`;
+}
+
+function estimateTransformInputLength(body: TransformRequest): number {
+  if (typeof body.text === "string" && body.text.trim()) {
+    return body.text.length;
+  }
+  if (body.fileData) return base64Size(body.fileData);
+  return 0;
+}
+
+function countActionBlocks(map: ActionMapData): number {
+  const applyCalloutTokens = ["para aplicarlo", "siguiente paso", "precaución"];
+  let count = 0;
+
+  if (!Array.isArray(map.steps)) return 0;
+
+  for (const step of map.steps) {
+    if (!Array.isArray(step?.content)) continue;
+    for (const block of step.content) {
+      if (!block || typeof block !== "object") continue;
+      if (block.kind === "action") {
+        count++;
+        continue;
+      }
+      if (block.type === "callout" && typeof block.label === "string") {
+        const label = block.label.toLowerCase();
+        if (applyCalloutTokens.some((token) => label.includes(token))) {
+          count++;
+        }
+      }
+    }
+  }
+
+  return count;
+}
+
+function logTransformEntryDebug(
+  body: TransformRequest,
+  context: TransformContext,
+  requestPath: string
+): void {
+  safeTransformDebugLog("[transform-debug]", {
+    rawIntent: body.intent ?? null,
+    rawDepth: body.depth ?? null,
+    resolvedIntent: context.resolvedIntent,
+    resolvedDepth: context.resolvedDepth,
+    preferredModel: body.preferredModel ?? null,
+    maxOutputTokens: context.maxOutputTokens,
+    selectedModelChain: context.modelChain,
+    sourceKind: context.type,
+    inputLength: estimateTransformInputLength(body),
+    requestPath,
+  });
+}
+
+function logTransformResultDebug(
+  context: TransformContext,
+  normalized: ActionMapData,
+  usedModel: string | null
+): void {
+  safeTransformDebugLog("[transform-result-debug]", {
+    resolvedIntent: context.resolvedIntent,
+    resolvedDepth: context.resolvedDepth,
+    finalIntent: normalized.intent ?? null,
+    stepsLength: Array.isArray(normalized.steps) ? normalized.steps.length : 0,
+    actionBlocks: countActionBlocks(normalized),
+    title: truncateDebugText(normalized.title),
+    hasCompletionCard: Boolean(normalized.completionCard?.title?.trim()),
+    usedModel,
+  });
+}
+
 type TransformContext = {
   contents: string | Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>;
   modelChain: string[];
@@ -424,6 +510,7 @@ function finalizeMapJson(
   });
   normalized.modelUsed = usedModel;
   cacheMap(context.mapId, normalized);
+  logTransformResultDebug(context, normalized, usedModel);
   return normalized;
 }
 
@@ -1388,6 +1475,8 @@ async function startServer() {
         return res.status(contextResult.status).json({ error: contextResult.error });
       }
 
+      logTransformEntryDebug(req.body as TransformRequest, contextResult, "/api/transform");
+
       const { response, model: usedModel } = await generateWithFallback(
         {
           contents: contextResult.contents,
@@ -1421,6 +1510,8 @@ async function startServer() {
       if ("error" in contextResult) {
         return res.status(contextResult.status).json({ error: contextResult.error });
       }
+
+      logTransformEntryDebug(req.body as TransformRequest, contextResult, "/api/transform/stream");
 
       await handleTransformStream(contextResult, res);
     } catch (err: any) {
