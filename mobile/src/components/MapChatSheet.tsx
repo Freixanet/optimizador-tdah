@@ -17,6 +17,7 @@ import { apiUrl } from '../logic/apiBase';
 import type { ActionMapData, ChatTurn, MapChatResponse } from '../logic/contracts';
 import { supabase } from '../logic/supabase';
 import GlassSurface from './GlassSurface';
+import { fetchWithTimeout } from '../logic/network';
 
 type MapChatSheetProps = {
   visible: boolean;
@@ -187,18 +188,25 @@ export default function MapChatSheet({ visible, onClose, mapId, mapData }: MapCh
           ? (await supabase.auth.getSession()).data.session?.access_token
           : undefined;
 
-        const response = await fetch(apiUrl(`/api/maps/${mapId}/chat`), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        const response = await fetchWithTimeout(
+          apiUrl(`/api/maps/${mapId}/chat`),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            },
+            body: JSON.stringify({
+              map: mapData,
+              question,
+              history: optimisticHistory,
+            }),
           },
-          body: JSON.stringify({
-            map: mapData,
-            question,
-            history: optimisticHistory,
-          }),
-        });
+          {
+            timeoutMs: 25000,
+            timeoutMessage: 'La respuesta está tardando demasiado. Inténtalo de nuevo.',
+          }
+        );
 
         const parsed = (await response.json()) as MapChatResponse & { error?: string };
         if (!response.ok) {

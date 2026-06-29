@@ -5,6 +5,63 @@ export const TRANSFORM_IDLE_TIMEOUT_MS = 60_000;
 export const TRANSFORM_IDLE_TIMEOUT_MESSAGE =
   'La generación se ha detenido. Comprueba tu conexión e inténtalo de nuevo.';
 
+async function localFetchWithTimeout(
+  input: any,
+  init: any = {},
+  options: { timeoutMs?: number; timeoutMessage?: string } = {}
+): Promise<Response> {
+  const {
+    timeoutMs = 20000,
+    timeoutMessage = 'La conexión está tardando demasiado. Inténtalo de nuevo.',
+  } = options;
+
+  const controller = new AbortController();
+  const { signal } = init;
+
+  let didTimeout = false;
+  let externalAbortListener: (() => void) | null = null;
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      externalAbortListener = () => {
+        controller.abort();
+      };
+      signal.addEventListener('abort', externalAbortListener, { once: true });
+    }
+  }
+
+  const timer = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err: any) {
+    if (didTimeout) {
+      throw new Error(timeoutMessage);
+    }
+    if (err && err.name === 'AbortError') {
+      if (signal?.aborted) {
+        throw err;
+      }
+      throw new Error(timeoutMessage);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (signal && externalAbortListener) {
+      signal.removeEventListener('abort', externalAbortListener);
+    }
+  }
+}
+
 export function isRenderablePartialMap(map: ActionMapData | null): boolean {
   if (!map) return false;
   const hasTitle = Boolean(map.title?.trim() && map.title !== 'Mapa sin título');
@@ -168,16 +225,23 @@ export async function fetchTransformWithProgress({
   };
 
   try {
-    const response = await fetch(streamUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/x-ndjson',
-        ...headers,
+    const response = await localFetchWithTimeout(
+      streamUrl,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/x-ndjson',
+          ...headers,
+        },
+        body: JSON.stringify(body),
+        signal,
       },
-      body: JSON.stringify(body),
-      signal,
-    });
+      {
+        timeoutMs: 20000,
+        timeoutMessage: 'La generación está tardando demasiado en empezar. Inténtalo de nuevo.',
+      }
+    );
 
     if (!response.ok) {
       const errPayload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -213,15 +277,22 @@ export async function fetchTransformWithProgress({
     if (signal?.aborted) throw err;
     if (receivedRenderablePartial) throw err;
 
-    const fallbackResponse = await fetch(fallbackUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
+    const fallbackResponse = await localFetchWithTimeout(
+      fallbackUrl,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(body),
+        signal,
       },
-      body: JSON.stringify(body),
-      signal,
-    });
+      {
+        timeoutMs: 30000,
+        timeoutMessage: 'La generación está tardando demasiado. Inténtalo de nuevo.',
+      }
+    );
 
     const parsed = (await fallbackResponse.json()) as ActionMapData & { error?: string };
     if (!fallbackResponse.ok || parsed.error) {

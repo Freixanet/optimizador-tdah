@@ -55,6 +55,7 @@ import {
 } from '../logic/transformStream';
 import { apiUrl } from '../logic/apiBase';
 import { isCloudSyncConfigured, supabase } from '../logic/supabase';
+import { fetchWithTimeout } from '../logic/network';
 
 export type AppPhase = 'input' | 'loading' | 'result';
 
@@ -1016,11 +1017,18 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session?.access_token;
 
-      const prepareResponse = await fetch(apiUrl(`/api/maps/${mapId}/cheatsheet.prepare`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ map: data }),
-      });
+      const prepareResponse = await fetchWithTimeout(
+        apiUrl(`/api/maps/${mapId}/cheatsheet.prepare`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ map: data }),
+        },
+        {
+          timeoutMs: 15000,
+          timeoutMessage: 'No se ha podido preparar el PDF a tiempo. Comprueba tu conexión e inténtalo de nuevo.',
+        }
+      );
 
       if (!prepareResponse.ok) {
         const err = (await prepareResponse.json().catch(() => ({}))) as { error?: string };
