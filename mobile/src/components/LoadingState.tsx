@@ -58,6 +58,7 @@ function ShimmerBlock({
 export default function LoadingState({ onCancel }: LoadingStateProps) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [delayStage, setDelayStage] = useState(0);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -70,6 +71,21 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const timer1 = setTimeout(() => {
+      setDelayStage(1);
+    }, 10000);
+
+    const timer2 = setTimeout(() => {
+      setDelayStage(2);
+    }, 18000);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, []);
+
   return (
     <View className="flex-1 items-center justify-center px-6 bg-neutral-50 dark:bg-neutral-900">
       <View className="w-full max-w-md">
@@ -77,6 +93,18 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
           <Text className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
             {PHASES[phaseIndex]}
           </Text>
+          <View style={{ height: 48, justifyContent: 'center', marginTop: 16 }} className="px-4">
+            {delayStage === 1 && (
+              <Text className="text-[12px] leading-[18px] text-center text-neutral-500 dark:text-neutral-400 font-medium">
+                Está tardando un poco más de lo habitual. Puedes esperar unos segundos más.
+              </Text>
+            )}
+            {delayStage === 2 && (
+              <Text className="text-[12px] leading-[18px] text-center text-neutral-500 dark:text-neutral-400 font-medium">
+                La fuente parece pesada. Núcleo sigue trabajando; también puedes cancelar e intentarlo con algo más breve.
+              </Text>
+            )}
+          </View>
         </View>
 
         <View className="gap-3">
