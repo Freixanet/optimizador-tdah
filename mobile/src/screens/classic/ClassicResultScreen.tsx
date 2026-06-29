@@ -13,7 +13,7 @@ import {
 } from 'lucide-react-native';
 import AppIcon from '../../components/AppIcon';
 import FloatingGlassButton from '../../components/FloatingGlassButton';
-import ReadingProgressBar from '../../components/ReadingProgressBar';
+import ReadingProgressBar, { mapContentTopPadding } from '../../components/ReadingProgressBar';
 import { useMapHeaderAutoHide } from '../../hooks/useMapHeaderAutoHide';
 import SourceMetadataGlassCard from '../../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../../components/StepContentBlocks';
@@ -272,7 +272,8 @@ export default function ClassicResultScreen() {
         <Animated.ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="px-5 pt-[76px] pb-32"
+          contentContainerClassName="px-5 pb-32"
+          contentContainerStyle={{ paddingTop: mapContentTopPadding(hideProgressLine) }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={!isIntroStep}
           scrollEnabled={!session.historyOpen}

@@ -22,6 +22,11 @@ export function readingProgressBarTotalHeight(hideProgressLine?: boolean): numbe
   return READING_PROGRESS_BAR_HEIGHT + (hideProgressLine ? 0 : READING_PROGRESS_LINE_HEIGHT);
 }
 
+/** Scroll content inset below the absolute reading header (bar height + small gap). */
+export function mapContentTopPadding(hideProgressLine?: boolean, extraGap = 8): number {
+  return readingProgressBarTotalHeight(hideProgressLine) + extraGap;
+}
+
 type ReadingProgressBarProps = {
   viewAll: boolean;
   isComplete: boolean;

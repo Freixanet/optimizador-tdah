@@ -18,7 +18,7 @@ import CompletionGlassButton from '../components/CompletionGlassButton';
 import IncompleteTransformBanner from '../components/IncompleteTransformBanner';
 import SessionErrorBanner from '../components/SessionErrorBanner';
 import MapChatSheet from '../components/MapChatSheet';
-import ReadingProgressBar from '../components/ReadingProgressBar';
+import ReadingProgressBar, { mapContentTopPadding } from '../components/ReadingProgressBar';
 import { useMapHeaderAutoHide } from '../hooks/useMapHeaderAutoHide';
 import SourceMetadataGlassCard from '../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../components/StepContentBlocks';
@@ -401,7 +401,8 @@ export default function ResultScreen() {
         <Animated.ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="px-5 pt-[76px] pb-32"
+          contentContainerClassName="px-5 pb-32"
+          contentContainerStyle={{ paddingTop: mapContentTopPadding(hideProgressLine) }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={!isIntroStep}
           scrollEnabled={!session.historyOpen}

@@ -6,10 +6,12 @@ import Animated, {
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
-import { READING_PROGRESS_BAR_HEIGHT } from '../components/ReadingProgressBar';
+import {
+  mapContentTopPadding,
+  READING_PROGRESS_BAR_HEIGHT,
+  READING_PROGRESS_LINE_HEIGHT,
+} from '../components/ReadingProgressBar';
 
-export const MAP_HEADER_CONTENT_TOP_PADDING = 76;
-export const READING_PROGRESS_LINE_HEIGHT = 8;
 const HEADER_HIDE_HYSTERESIS = 6;
 
 type UseMapHeaderAutoHideOptions = {
@@ -22,9 +24,13 @@ type UseMapHeaderAutoHideOptions = {
   onScrollReport?: (scrollY: number, contentHeight: number) => void;
 };
 
-function computeHideThreshold(metaAnchorHeight: number, headerBottom: number): number {
+function computeHideThreshold(
+  hideProgressLine: boolean,
+  metaAnchorHeight: number,
+  headerBottom: number
+): number {
   if (metaAnchorHeight <= 0) return 0;
-  return Math.max(0, MAP_HEADER_CONTENT_TOP_PADDING + metaAnchorHeight - headerBottom);
+  return Math.max(0, mapContentTopPadding(hideProgressLine) + metaAnchorHeight - headerBottom);
 }
 
 export function useMapHeaderAutoHide({
@@ -47,7 +53,7 @@ export function useMapHeaderAutoHide({
     const bottom =
       READING_PROGRESS_BAR_HEIGHT + (hideProgressLine ? 0 : READING_PROGRESS_LINE_HEIGHT);
     headerBottomHeight.value = bottom;
-    hideScrollThreshold.value = computeHideThreshold(mapMetaAnchorHeight.value, bottom);
+    hideScrollThreshold.value = computeHideThreshold(hideProgressLine, mapMetaAnchorHeight.value, bottom);
   }, [hideProgressLine, headerBottomHeight, hideScrollThreshold, mapMetaAnchorHeight]);
 
   useEffect(() => {
@@ -70,9 +76,13 @@ export function useMapHeaderAutoHide({
       const { height } = event.nativeEvent.layout;
       if (height <= 0) return;
       mapMetaAnchorHeight.value = height;
-      hideScrollThreshold.value = computeHideThreshold(height, headerBottomHeight.value);
+      hideScrollThreshold.value = computeHideThreshold(
+        hideProgressLine,
+        height,
+        headerBottomHeight.value
+      );
     },
-    [headerBottomHeight, hideScrollThreshold, mapMetaAnchorHeight]
+    [headerBottomHeight, hideProgressLine, hideScrollThreshold, mapMetaAnchorHeight]
   );
 
   const scrollHandler = useAnimatedScrollHandler({
