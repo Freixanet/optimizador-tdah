@@ -1,9 +1,28 @@
-import type { ActionMapData, TransformStreamEvent } from './contracts';
+import type { ActionMapData, MapDepth, TransformStreamEvent } from './contracts';
 import { normalizeMapData } from './mapData';
 
-export const TRANSFORM_IDLE_TIMEOUT_MS = 60_000;
+/** Default idle window when depth is unknown (estándar). */
+export const TRANSFORM_IDLE_TIMEOUT_MS = 90_000;
 export const TRANSFORM_IDLE_TIMEOUT_MESSAGE =
   'La generación se ha detenido. Comprueba tu conexión e inténtalo de nuevo.';
+
+export function resolveTransformIdleTimeoutMs(depth?: MapDepth): number {
+  if (depth === 'rapido') return 75_000;
+  if (depth === 'profundo') return 180_000;
+  return 90_000;
+}
+
+export function resolveTransformFallbackTimeoutMs(depth?: MapDepth): number {
+  if (depth === 'rapido') return 45_000;
+  if (depth === 'profundo') return 180_000;
+  return 75_000;
+}
+
+function resolveDepthFromBody(body: unknown): MapDepth {
+  const depth = (body as { depth?: string })?.depth;
+  if (depth === 'rapido' || depth === 'profundo') return depth;
+  return 'estandar';
+}
 
 async function localFetchWithTimeout(
   input: any,
@@ -200,9 +219,24 @@ export type FetchTransformOptions = {
   body: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  depth?: MapDepth;
   idleTimeoutMs?: number;
+  fallbackTimeoutMs?: number;
   handlers: TransformStreamHandlers;
 };
+
+function streamEndedWithoutDoneMessage(
+  result: ConsumeTransformStreamResult,
+  receivedRenderablePartial: boolean
+): string {
+  if (result === 'idle') {
+    return TRANSFORM_IDLE_TIMEOUT_MESSAGE;
+  }
+  if (receivedRenderablePartial) {
+    return 'La generación se interrumpió antes de completarse.';
+  }
+  return 'Streaming incompleto';
+}
 
 export async function fetchTransformWithProgress({
   streamUrl,
@@ -210,10 +244,18 @@ export async function fetchTransformWithProgress({
   body,
   headers = {},
   signal,
+  depth,
   idleTimeoutMs,
+  fallbackTimeoutMs,
   handlers,
 }: FetchTransformOptions): Promise<'stream' | 'fallback'> {
   let receivedRenderablePartial = false;
+  let streamEstablished = false;
+
+  const resolvedDepth = depth ?? resolveDepthFromBody(body);
+  const resolvedIdleTimeoutMs = idleTimeoutMs ?? resolveTransformIdleTimeoutMs(resolvedDepth);
+  const resolvedFallbackTimeoutMs =
+    fallbackTimeoutMs ?? resolveTransformFallbackTimeoutMs(resolvedDepth);
 
   const wrappedHandlers: TransformStreamHandlers = {
     onPartial: (map) => {
@@ -223,6 +265,9 @@ export async function fetchTransformWithProgress({
     onDone: handlers.onDone,
     onError: handlers.onError,
   };
+
+  const shouldAllowRestFallback = () =>
+    !signal?.aborted && !streamEstablished && !receivedRenderablePartial;
 
   try {
     const response = await localFetchWithTimeout(
@@ -252,9 +297,11 @@ export async function fetchTransformWithProgress({
       throw new Error('Streaming no disponible');
     }
 
+    streamEstablished = true;
+
     const result = await consumeTransformStream(response, wrappedHandlers, {
       signal,
-      idleTimeoutMs,
+      idleTimeoutMs: resolvedIdleTimeoutMs,
     });
 
     if (result === 'done') return 'stream';
@@ -263,19 +310,10 @@ export async function fetchTransformWithProgress({
       throw new DOMException('Aborted', 'AbortError');
     }
 
-    if (!receivedRenderablePartial) {
-      throw new Error('Streaming incompleto');
-    }
-
-    handlers.onError(
-      result === 'idle'
-        ? TRANSFORM_IDLE_TIMEOUT_MESSAGE
-        : 'La generación se interrumpió antes de completarse.'
-    );
-    return 'stream';
+    throw new Error(streamEndedWithoutDoneMessage(result, receivedRenderablePartial));
   } catch (err: unknown) {
     if (signal?.aborted) throw err;
-    if (receivedRenderablePartial) throw err;
+    if (!shouldAllowRestFallback()) throw err;
 
     const fallbackResponse = await localFetchWithTimeout(
       fallbackUrl,
@@ -289,7 +327,7 @@ export async function fetchTransformWithProgress({
         signal,
       },
       {
-        timeoutMs: 30000,
+        timeoutMs: resolvedFallbackTimeoutMs,
         timeoutMessage: 'La generación está tardando demasiado. Inténtalo de nuevo.',
       }
     );

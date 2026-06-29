@@ -790,6 +790,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         body,
         headers,
         signal: controller.signal,
+        depth: depthPreference,
         handlers: {
           onPartial: (partialMap) => {
             if (!hasShownPartial) {
