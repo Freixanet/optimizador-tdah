@@ -9,6 +9,7 @@ import OAuthRedirectListener from './src/components/OAuthRedirectListener';
 import { AppSessionProvider, useAppSession } from './src/context/AppSessionContext';
 import { AppVariantProvider } from './src/context/AppVariantContext';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { NetworkStatusProvider } from './src/context/NetworkStatusContext';
 import { bootstrapStorage } from './src/shims/localStorage';
 import { getAppVariant, switchAppVariant, type AppVariant } from './src/logic/appVariant';
 import ComprensionApp from './src/screens/ComprensionApp';
@@ -81,7 +82,9 @@ export default function App() {
           </View>
         ) : (
           <ThemeProvider>
-            <AppShell />
+            <NetworkStatusProvider>
+              <AppShell />
+            </NetworkStatusProvider>
           </ThemeProvider>
         )}
       </SafeAreaProvider>
