@@ -790,15 +790,6 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         if (transformCancelledRef.current) {
-          if (partialShownRef.current) {
-            setTransformIncomplete(true);
-            setPhase('result');
-          } else {
-            setData(null);
-            setTransformIncomplete(false);
-            setPhase('input');
-          }
-          partialShownRef.current = false;
           return;
         }
         failTransform(TRANSFORM_IDLE_TIMEOUT_MESSAGE, hasShownPartial, sourceKind);
