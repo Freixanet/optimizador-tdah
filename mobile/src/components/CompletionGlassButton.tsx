@@ -86,7 +86,7 @@ export default function CompletionGlassButton({
 const styles = StyleSheet.create({
   pressable: {
     width: '100%',
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
   },
   shell: {
     width: '100%',

@@ -1,12 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, Pressable, Text, View } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import { AccessibilityInfo, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useTheme } from '../context/ThemeContext';
+import ExactLiquidOrbWebView from './ExactLiquidOrbWebView';
+import CompletionGlassButton from './CompletionGlassButton';
 
 const PHASES = [
   'Leyendo la fuente',
@@ -15,45 +12,86 @@ const PHASES = [
   'Generando los pasos',
 ] as const;
 
-type LoadingStateProps = {
-  onCancel: () => void;
-};
+const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*+<>?';
 
-function ShimmerBlock({
-  className = '',
-  reduceMotion,
-  delay = 0,
-}: {
-  className?: string;
-  reduceMotion: boolean;
-  delay?: number;
-}) {
-  const translateX = useSharedValue(-120);
+function ScrambleText({ text, className }: { text: string; className?: string }) {
+  const [state, setState] = useState({ currentTarget: text, display: text });
+
+  // If prop changes, immediately set to a fully scrambled state to avoid flashing the answer
+  if (state.currentTarget !== text) {
+    const initialScramble = text
+      .split('')
+      .map((c) => (c === ' ' ? ' ' : SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)]))
+      .join('');
+    setState({ currentTarget: text, display: initialScramble });
+  }
 
   useEffect(() => {
-    if (reduceMotion) return;
-    translateX.value = withRepeat(
-      withTiming(240, { duration: 1600, easing: Easing.linear }),
-      -1,
-      false
-    );
-  }, [delay, reduceMotion, translateX]);
+    let frameId: number;
+    let index = 0;
+    const originalText = text;
 
-  const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
+    const tick = () => {
+      if (index >= originalText.length) {
+        setState({ currentTarget: originalText, display: originalText });
+        return;
+      }
+
+      setState((current) => {
+        const nextChars = originalText.split('').map((char, i) => {
+          if (i < index) return char;
+          if (char === ' ') return ' ';
+          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+        });
+        return { currentTarget: originalText, display: nextChars.join('') };
+      });
+
+      index += 1;
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [text]);
+
+  return <Text className={className}>{state.display}</Text>;
+}
+
+function StepperDot({ active }: { active: boolean }) {
+  const widthVal = useSharedValue(8);
+  const opacityVal = useSharedValue(0.4);
+
+  useEffect(() => {
+    widthVal.value = withTiming(active ? 20 : 8, { duration: 250 });
+    opacityVal.value = withTiming(active ? 1.0 : 0.4, { duration: 250 });
+  }, [active, opacityVal, widthVal]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    width: widthVal.value,
+    opacity: opacityVal.value,
   }));
 
   return (
-    <View className={`overflow-hidden rounded-md bg-zinc-200/70 dark:bg-zinc-800/70 border border-indigo-500/10 ${className}`}>
-      {!reduceMotion ? (
-        <Animated.View
-          style={shimmerStyle}
-          className="absolute inset-y-0 w-1/2 bg-indigo-400/20 dark:bg-indigo-500/10"
-        />
-      ) : null}
+    <Animated.View
+      style={animatedStyle}
+      className="h-2 rounded-full bg-indigo-600 dark:bg-indigo-400"
+    />
+  );
+}
+
+function PhaseStepper({ currentPhase, totalPhases }: { currentPhase: number; totalPhases: number }) {
+  return (
+    <View className="flex-row items-center justify-center gap-1.5 mt-4">
+      {Array.from({ length: totalPhases }).map((_, i) => (
+        <StepperDot key={i} active={i === currentPhase} />
+      ))}
     </View>
   );
 }
+
+type LoadingStateProps = {
+  onCancel: () => void;
+};
 
 export default function LoadingState({ onCancel }: LoadingStateProps) {
   const [phaseIndex, setPhaseIndex] = useState(0);
@@ -67,7 +105,7 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
   useEffect(() => {
     const timer = setInterval(() => {
       setPhaseIndex((current) => (current + 1) % PHASES.length);
-    }, 2400);
+    }, 3000); // Slightly longer interval so the scramble has time to shine
     return () => clearInterval(timer);
   }, []);
 
@@ -87,12 +125,18 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
   }, []);
 
   return (
-    <View className="flex-1 items-center justify-center px-6 bg-neutral-50 dark:bg-neutral-900">
-      <View className="w-full max-w-md">
-        <View className="mb-8">
-          <Text className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
-            {PHASES[phaseIndex]}
-          </Text>
+    <View className="flex-1 justify-center px-6 pb-32 bg-neutral-50 dark:bg-neutral-900">
+      <View className="w-full items-center mb-8">
+        <View style={{ marginBottom: -30 }} className="z-10">
+          <ExactLiquidOrbWebView size={96} reduceMotion={reduceMotion} />
+        </View>
+        <View className="z-20">
+          <ScrambleText
+            text={PHASES[phaseIndex]}
+            className="text-sm font-semibold text-center text-indigo-600 dark:text-indigo-400 tracking-wider"
+          />
+          <PhaseStepper currentPhase={phaseIndex} totalPhases={PHASES.length} />
+
           <View style={{ height: 48, justifyContent: 'center', marginTop: 16 }} className="px-4">
             {delayStage === 1 && (
               <Text className="text-[12px] leading-[18px] text-center text-neutral-500 dark:text-neutral-400 font-medium">
@@ -106,23 +150,15 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
             )}
           </View>
         </View>
+      </View>
 
-        <View className="gap-3">
-          <ShimmerBlock className="h-4 w-3/4" reduceMotion={reduceMotion} />
-          <ShimmerBlock className="h-4 w-full" reduceMotion={reduceMotion} delay={100} />
-          <ShimmerBlock className="h-4 w-5/6" reduceMotion={reduceMotion} delay={200} />
-          <View className="mt-4 gap-3">
-            <ShimmerBlock className="h-24 w-full rounded-2xl" reduceMotion={reduceMotion} delay={300} />
-            <ShimmerBlock className="h-16 w-full rounded-2xl" reduceMotion={reduceMotion} delay={400} />
-          </View>
-        </View>
-
-        <Pressable
+      <View className="w-40 self-center mt-4">
+        <CompletionGlassButton
+          label="Cancelar"
           onPress={onCancel}
-          className="mt-10 self-center px-5 py-3 rounded-xl border border-neutral-200 dark:border-white/10"
-        >
-          <Text className="text-neutral-700 dark:text-neutral-300 font-semibold">Cancelar</Text>
-        </Pressable>
+          variant="neutral"
+          accessibilityLabel="Cancelar carga"
+        />
       </View>
     </View>
   );

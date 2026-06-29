@@ -250,12 +250,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   neutralPill: {
-    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    height: FLOATING_PILL_MIN_HEIGHT,
     borderRadius: FLOATING_PILL_RADIUS,
     overflow: 'hidden',
   },
   pillContent: {
-    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    height: FLOATING_PILL_MIN_HEIGHT,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   pillContentCompact: {
-    minHeight: FLOATING_PILL_MIN_HEIGHT,
+    height: FLOATING_PILL_MIN_HEIGHT,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
