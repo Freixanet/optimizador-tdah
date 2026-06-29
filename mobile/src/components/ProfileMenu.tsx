@@ -16,7 +16,6 @@ import { useAppSession, stepHaptic } from '../context/AppSessionContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAppVariantSwitch } from '../context/AppVariantContext';
 import { APP_VARIANT_OPTIONS, getAppVariant } from '../logic/appVariant';
-import { signOut } from '../logic/cloudHistory';
 
 type ProfileMenuProps = {
   placement?: 'topRight' | 'bottomLeft';
@@ -167,7 +166,7 @@ export default function ProfileMenu({ placement = 'topRight', floating = false }
           <Pressable
             onPress={() => {
               closeMenu();
-              void signOut();
+              void session.handleSignOut();
               stepHaptic();
             }}
             className="px-2.5 py-4 flex-row items-center gap-3 rounded-[14px] active:bg-neutral-100/70 dark:active:bg-white/[0.06]"
