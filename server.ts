@@ -315,6 +315,10 @@ function countActionBlocks(map: ActionMapData): number {
         count++;
         continue;
       }
+      if (block.type === "list" && block.kind === "action") {
+        count++;
+        continue;
+      }
       if (block.type === "callout" && typeof block.label === "string") {
         const label = block.label.toLowerCase();
         if (applyCalloutTokens.some((token) => label.includes(token))) {
@@ -325,6 +329,975 @@ function countActionBlocks(map: ActionMapData): number {
   }
 
   return count;
+}
+
+type SourceComplexity = "trivial" | "breve" | "medio" | "largo" | "complejo";
+
+type AdaptiveQualityContract = {
+  sourceComplexity: SourceComplexity;
+  intent: MapIntent;
+  depth: NonNullable<TransformRequest["depth"]>;
+  depthQualityVerdict: string;
+  intentQualityVerdict: string;
+};
+
+type TransformQualityMetrics = {
+  stepsLength: number;
+  actionBlocks: number;
+  understandCallouts: number;
+  totalStepWords: number;
+  avgWordsPerStep: number;
+  tldrCount: number;
+  knowledgeSectionCount: number;
+};
+
+type TransformQualityEvaluation = {
+  passed: boolean;
+  reasons: string[];
+  depthVerdict: string;
+  intentVerdict: string;
+  metrics: TransformQualityMetrics;
+};
+
+type QualityRepairMeta = {
+  qualityRepairAttempted: boolean;
+  qualityRepairApplied: boolean;
+  qualityRepairEffective: boolean;
+  qualityRepairReasons: string[] | null;
+  qualityReasonsBeforeRepair: string[] | null;
+  qualityReasonsAfterRepair: string[] | null;
+  applyCriticalReasonsBefore: string[] | null;
+  applyCriticalReasonsAfter: string[] | null;
+  repairOutcomeReason: string | null;
+  sourceComplexity: SourceComplexity;
+  depthQualityVerdict: string;
+  intentQualityVerdict: string;
+  stepsBeforeRepair: number | null;
+  actionBlocksBeforeRepair: number | null;
+  stepsAfterRepair: number | null;
+  actionBlocksAfterRepair: number | null;
+  usedRepairModel: string | null;
+};
+
+type ConceptualRichness = "low" | "moderate" | "high";
+
+type SourceComplexityProfile = {
+  sourceComplexity: SourceComplexity;
+  conceptSignalCount: number;
+  conceptualRichness: ConceptualRichness;
+  complexityReasons: string[];
+  substantiveConceptCount: number;
+  combinesUnderstandAndApply: boolean;
+  comparesMultipleConcepts: boolean;
+};
+
+function countUnderstandCallouts(map: ActionMapData): number {
+  const labels = ["idea clave", "matiz", "ejemplo"];
+  let count = 0;
+  for (const step of map.steps ?? []) {
+    for (const block of step.content ?? []) {
+      if (block.type === "callout" && block.label) {
+        const label = block.label.toLowerCase();
+        if (labels.some((token) => label.includes(token))) count++;
+      }
+    }
+  }
+  return count;
+}
+
+function countMapStepWords(map: ActionMapData): number {
+  return (map.steps ?? []).reduce(
+    (sum, step) => sum + countStepWords(step.content ?? []),
+    0
+  );
+}
+
+function countConceptSignals(text: string): number {
+  return assessConceptualRichness(text).signalCount;
+}
+
+function assessConceptualRichness(text: string): {
+  signalCount: number;
+  richness: ConceptualRichness;
+  reasons: string[];
+  substantiveConceptCount: number;
+  combinesUnderstandAndApply: boolean;
+  comparesMultipleConcepts: boolean;
+} {
+  const normalized = text.trim();
+  const reasons: string[] = [];
+  let signalCount = 0;
+  let substantiveConceptCount = 0;
+
+  if (/\bdiferencia(s)?\s+(entre|de)\b/i.test(normalized)) {
+    signalCount += 2;
+    reasons.push("comparison_request");
+  }
+
+  const multiConceptMatch = normalized.match(/\bdiferencia\s+entre\s+([^?.!]+)/i);
+  if (multiConceptMatch) {
+    const concepts = multiConceptMatch[1]
+      .split(/\s*(?:,|\sy\s|\se\s)\s*/i)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 2);
+    substantiveConceptCount = Math.max(substantiveConceptCount, concepts.length);
+    if (concepts.length >= 3) {
+      signalCount += 2;
+      reasons.push("three_or_more_concepts");
+    }
+  }
+
+  const comparesMultipleConcepts =
+    substantiveConceptCount >= 3 || /\bentre\s+[^,.?]+\s+y\s+[^,.?]+\s+y\s+/i.test(normalized);
+
+  const domainTerms = normalized.match(
+    /\b(dopamina|motivaci[oó]n|disciplina|tdah|ansiedad|memoria|h[aá]bitos?|aprendizaje|cognitiv[oa]|conductual|psicol[oó]gic[oa]|atenci[oó]n|enfoque|productividad)\b/gi
+  );
+  if (domainTerms) {
+    const uniqueTerms = new Set(domainTerms.map((term) => term.toLowerCase()));
+    substantiveConceptCount = Math.max(substantiveConceptCount, uniqueTerms.size);
+    if (uniqueTerms.size >= 2) {
+      signalCount += 1;
+      reasons.push("psychological_concepts");
+    }
+  }
+
+  if (/\b(c[oó]mo\s+usarlo|c[oó]mo\s+usar|aplicar|organizar|decidir|plan(?:ificar)?|rutina|hacer|mejorar\s+mi\s+d[ií]a)\b/i.test(normalized)) {
+    signalCount += 1;
+    reasons.push("application_language");
+  }
+
+  const hasUnderstand = /\b(entender|comprender|explicar|diferencia|qu[eé]\s+es|por\s+qu[eé]|mecanismo|causa|efecto)\b/i.test(
+    normalized
+  );
+  const hasApply = sourceHasApplicationSignals(normalized);
+  const combinesUnderstandAndApply = hasUnderstand && hasApply;
+  if (combinesUnderstandAndApply) {
+    signalCount += 2;
+    reasons.push("understand_plus_apply");
+  }
+
+  if (/\b(vs\.?|versus|comparaci[oó]n|frente a|relaci[oó]n|causa|efecto|mecanismo|por\s+qu[eé]|porque|implica)\b/i.test(normalized)) {
+    signalCount += 1;
+    reasons.push("relational_connectors");
+  }
+
+  if (/\?/.test(normalized) || /\b(quiero\s+entender|c[oó]mo\s+puedo|c[oó]mo\s+usar)\b/i.test(normalized)) {
+    signalCount += 1;
+    reasons.push("explanatory_question");
+  }
+
+  if (/\n\s*[-*•]\s+/m.test(normalized)) {
+    signalCount += 1;
+    reasons.push("list_structure");
+  }
+
+  let richness: ConceptualRichness = "low";
+  if (
+    signalCount >= 6 ||
+    (comparesMultipleConcepts && combinesUnderstandAndApply) ||
+    (substantiveConceptCount >= 4 && hasApply)
+  ) {
+    richness = "high";
+  } else if (
+    signalCount >= 3 ||
+    comparesMultipleConcepts ||
+    substantiveConceptCount >= 3 ||
+    combinesUnderstandAndApply
+  ) {
+    richness = "moderate";
+  }
+
+  return {
+    signalCount,
+    richness,
+    reasons,
+    substantiveConceptCount,
+    combinesUnderstandAndApply,
+    comparesMultipleConcepts,
+  };
+}
+
+function upliftComplexityForConceptualRichness(
+  base: SourceComplexity,
+  assessment: ReturnType<typeof assessConceptualRichness>
+): { complexity: SourceComplexity; reasons: string[] } {
+  const upliftReasons: string[] = [];
+  const { richness, comparesMultipleConcepts, combinesUnderstandAndApply, substantiveConceptCount } =
+    assessment;
+
+  if (base === "trivial" && richness !== "low") {
+    upliftReasons.push("conceptual_richness_uplift_trivial_to_breve");
+    base = "breve";
+  }
+
+  const shouldReachMedio =
+    richness === "high" ||
+    (richness === "moderate" &&
+      (comparesMultipleConcepts || combinesUnderstandAndApply || substantiveConceptCount >= 3));
+
+  if ((base === "breve" || base === "trivial") && shouldReachMedio) {
+    upliftReasons.push("conceptual_richness_uplift_to_medio");
+    return { complexity: "medio", reasons: upliftReasons };
+  }
+
+  return { complexity: base, reasons: upliftReasons };
+}
+
+function sourceHasApplicationSignals(text: string): boolean {
+  return /\b(aplicar|organizar|rutina|pasos|decidir|hacer|evitar|próximo|siguiente|checklist|día|acción)\b/i.test(
+    text
+  );
+}
+
+function estimateSourceComplexityProfile(params: {
+  inputLength: number;
+  sourceKind: TransformRequest["type"];
+  textPreview: string;
+}): SourceComplexityProfile {
+  const { inputLength, sourceKind, textPreview } = params;
+  const text = textPreview.trim();
+  const sentences = text.split(/[.!?]+/).filter((part) => part.trim().length > 8).length;
+  const assessment = assessConceptualRichness(text);
+  const complexityReasons = [...assessment.reasons];
+
+  let base: SourceComplexity;
+
+  if (sourceKind === "pdf" || sourceKind === "video") {
+    if (inputLength > 500_000) base = "complejo";
+    else if (inputLength > 120_000) base = "largo";
+    else if (inputLength > 40_000) base = "medio";
+    else base = inputLength > 8_000 ? "breve" : "trivial";
+  } else if (sourceKind === "youtube" || sourceKind === "link") {
+    if (inputLength > 12_000) base = "complejo";
+    else if (inputLength > 5_000) base = "largo";
+    else if (inputLength > 1_800) base = "medio";
+    else if (inputLength > 500) base = "breve";
+    else base = "trivial";
+  } else if (inputLength < 40 && sentences <= 1 && assessment.signalCount === 0) {
+    base = "trivial";
+  } else if (inputLength < 140 && sentences <= 2 && assessment.richness === "low") {
+    base = "breve";
+  } else if (inputLength < 500 && sentences <= 5 && assessment.richness !== "high") {
+    base = "medio";
+  } else if (inputLength < 1_400 || sentences <= 8) {
+    base = "medio";
+  } else if (inputLength < 3_200 || sentences <= 14) {
+    base = "largo";
+  } else if (assessment.signalCount >= 5 || inputLength >= 3_200) {
+    base = "complejo";
+  } else {
+    base = "largo";
+  }
+
+  const uplift = upliftComplexityForConceptualRichness(base, assessment);
+  complexityReasons.push(...uplift.reasons);
+
+  return {
+    sourceComplexity: uplift.complexity,
+    conceptSignalCount: assessment.signalCount,
+    conceptualRichness: assessment.richness,
+    complexityReasons,
+    substantiveConceptCount: assessment.substantiveConceptCount,
+    combinesUnderstandAndApply: assessment.combinesUnderstandAndApply,
+    comparesMultipleConcepts: assessment.comparesMultipleConcepts,
+  };
+}
+
+function estimateSourceComplexity(params: {
+  inputLength: number;
+  sourceKind: TransformRequest["type"];
+  textPreview: string;
+}): SourceComplexity {
+  return estimateSourceComplexityProfile(params).sourceComplexity;
+}
+
+function resolveSourceTextPreview(
+  body: TransformRequest,
+  contents: string | Array<{ inlineData?: { data: string; mimeType: string }; text?: string }>
+): string {
+  if (typeof body.text === "string" && body.text.trim()) {
+    return body.text.trim().slice(0, 4_000);
+  }
+  if (typeof contents === "string") {
+    const marker = "\n\nContenido fuente:\n";
+    const idx = contents.indexOf(marker);
+    if (idx >= 0) {
+      return contents.slice(idx + marker.length).trim().slice(0, 4_000);
+    }
+  }
+  return "";
+}
+
+function getAdaptiveQualityContract(
+  intent: MapIntent,
+  depth: TransformRequest["depth"],
+  sourceComplexity: SourceComplexity
+): AdaptiveQualityContract {
+  const resolvedDepth =
+    depth === "rapido" || depth === "profundo" ? depth : "estandar";
+
+  const depthQualityVerdict =
+    resolvedDepth === "rapido"
+      ? "Síntesis agrupada sin perder el núcleo esencial."
+      : resolvedDepth === "profundo"
+        ? "Alta densidad explicativa, matices y cobertura proporcional a la fuente."
+        : "Equilibrio entre cobertura principal y claridad.";
+
+  const intentQualityVerdict =
+    intent === "apply"
+      ? "Traducción práctica con decisiones, acciones o criterios cuando la fuente lo permite."
+      : intent === "study"
+        ? "Retención, relaciones y repaso útil."
+        : "Comprensión conceptual con relaciones, matices y ejemplos cuando ayuden.";
+
+  return {
+    sourceComplexity,
+    intent,
+    depth: resolvedDepth,
+    depthQualityVerdict,
+    intentQualityVerdict,
+  };
+}
+
+function buildQualityMetrics(map: ActionMapData): TransformQualityMetrics {
+  const stepsLength = map.steps?.length ?? 0;
+  const totalStepWords = countMapStepWords(map);
+  return {
+    stepsLength,
+    actionBlocks: countActionBlocks(map),
+    understandCallouts: countUnderstandCallouts(map),
+    totalStepWords,
+    avgWordsPerStep: stepsLength > 0 ? Math.round(totalStepWords / stepsLength) : 0,
+    tldrCount: map.tldr?.length ?? 0,
+    knowledgeSectionCount: map.knowledgeSections?.length ?? 0,
+  };
+}
+
+function isQualityRichSource(
+  sourceComplexity: SourceComplexity,
+  context: TransformContext
+): boolean {
+  return (
+    sourceComplexity === "medio" ||
+    sourceComplexity === "largo" ||
+    sourceComplexity === "complejo" ||
+    context.conceptualRichness === "high" ||
+    (context.conceptualRichness === "moderate" && context.conceptSignalCount >= 3)
+  );
+}
+
+function evaluateTransformQuality(
+  map: ActionMapData,
+  contract: AdaptiveQualityContract,
+  context: TransformContext
+): TransformQualityEvaluation {
+  const metrics = buildQualityMetrics(map);
+  const reasons: string[] = [];
+  const { sourceComplexity, intent, depth } = contract;
+  const preview = context.sourceTextPreview;
+  const richSource = isQualityRichSource(sourceComplexity, context);
+  const denseSource = sourceComplexity === "largo" || sourceComplexity === "complejo";
+  const conceptuallyDense =
+    richSource &&
+    (context.comparesMultipleConcepts ||
+      context.substantiveConceptCount >= 3 ||
+      context.combinesUnderstandAndApply);
+
+  if (!map.coreIdea?.trim()) {
+    reasons.push("missing_core_idea");
+  }
+
+  if (depth === "profundo") {
+    if (richSource && metrics.stepsLength <= 3 && metrics.avgWordsPerStep < 85) {
+      reasons.push("profundo_collapsed_for_rich_source");
+    }
+    if (denseSource && metrics.totalStepWords < 380) {
+      reasons.push("profundo_insufficient_density");
+    }
+    if (
+      conceptuallyDense &&
+      metrics.totalStepWords < 260 &&
+      metrics.avgWordsPerStep < 95
+    ) {
+      reasons.push("profundo_insufficient_conceptual_density");
+    }
+    if (sourceComplexity === "breve" && metrics.avgWordsPerStep < 55 && metrics.totalStepWords < 140) {
+      reasons.push("profundo_steps_not_internally_rich");
+    }
+    if (richSource && metrics.understandCallouts === 0 && metrics.tldrCount < 3) {
+      reasons.push("profundo_missing_conceptual_scaffolding");
+    }
+    if (
+      intent === "understand" &&
+      conceptuallyDense &&
+      metrics.understandCallouts < 2 &&
+      metrics.knowledgeSectionCount < 2 &&
+      metrics.tldrCount < 4
+    ) {
+      reasons.push("profundo_underdeveloped_multi_concept");
+    }
+    if (
+      intent === "apply" &&
+      conceptuallyDense &&
+      metrics.actionBlocks <= 2 &&
+      (sourceHasApplicationSignals(preview) || context.combinesUnderstandAndApply)
+    ) {
+      reasons.push("apply_insufficient_actionability_for_rich_source");
+    }
+    if (
+      intent === "apply" &&
+      conceptuallyDense &&
+      metrics.actionBlocks > 0 &&
+      metrics.totalStepWords > 180 &&
+      metrics.actionBlocks < Math.min(3, Math.max(2, context.substantiveConceptCount - 1))
+    ) {
+      reasons.push("apply_too_theoretical_for_rich_source");
+    }
+  } else if (depth === "estandar") {
+    if (denseSource && metrics.stepsLength <= 2 && metrics.totalStepWords < 220) {
+      reasons.push("estandar_undercoverage_for_dense_source");
+    }
+    if (richSource && metrics.totalStepWords < 180) {
+      reasons.push("estandar_too_compressed");
+    }
+  } else if (depth === "rapido") {
+    if (denseSource && metrics.stepsLength <= 1 && metrics.totalStepWords < 90) {
+      reasons.push("rapido_lost_essential_ideas");
+    }
+  }
+
+  if (intent === "apply") {
+    if (
+      metrics.actionBlocks === 0 &&
+      (sourceHasApplicationSignals(preview) || /cómo|organizar|día/i.test(preview))
+    ) {
+      reasons.push("apply_missing_actionability");
+    }
+    if (
+      richSource &&
+      depth !== "rapido" &&
+      metrics.actionBlocks <= 1 &&
+      metrics.totalStepWords > 120
+    ) {
+      reasons.push("apply_too_theoretical");
+    }
+  } else if (intent === "understand") {
+    if (
+      richSource &&
+      metrics.actionBlocks >= Math.max(2, metrics.stepsLength) &&
+      metrics.understandCallouts === 0
+    ) {
+      reasons.push("understand_over_action_oriented");
+    }
+    if (
+      richSource &&
+      depth !== "rapido" &&
+      metrics.understandCallouts === 0 &&
+      metrics.avgWordsPerStep < 55
+    ) {
+      reasons.push("understand_too_superficial");
+    }
+    if (
+      conceptuallyDense &&
+      depth === "profundo" &&
+      metrics.understandCallouts === 0 &&
+      metrics.knowledgeSectionCount === 0
+    ) {
+      reasons.push("understand_missing_relations_or_nuance");
+    }
+  }
+
+  if (richSource && depth !== "rapido" && metrics.tldrCount < 2 && metrics.stepsLength <= 2) {
+    reasons.push("generic_superficial_output");
+  }
+
+  const depthVerdict = reasons.some((reason) => reason.startsWith("profundo_") || reason.startsWith("estandar_") || reason.startsWith("rapido_"))
+    ? "needs_improvement"
+    : "ok";
+  const intentVerdict = reasons.some((reason) => reason.startsWith("apply_") || reason.startsWith("understand_"))
+    ? "needs_improvement"
+    : "ok";
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    depthVerdict,
+    intentVerdict,
+    metrics,
+  };
+}
+
+function shouldRepairTransformQuality(evaluation: TransformQualityEvaluation): boolean {
+  return !evaluation.passed && evaluation.reasons.length > 0;
+}
+
+const CRITICAL_QUALITY_REASONS = new Set([
+  "profundo_collapsed_for_rich_source",
+  "profundo_insufficient_conceptual_density",
+  "profundo_missing_conceptual_scaffolding",
+  "profundo_underdeveloped_multi_concept",
+  "apply_insufficient_actionability_for_rich_source",
+  "apply_too_theoretical_for_rich_source",
+  "apply_missing_actionability",
+  "understand_too_superficial",
+  "understand_missing_relations_or_nuance",
+  "generic_superficial_output",
+]);
+
+function countCriticalQualityReasons(reasons: string[]): number {
+  return reasons.filter((reason) => CRITICAL_QUALITY_REASONS.has(reason)).length;
+}
+
+function getApplyCriticalReasons(reasons: string[]): string[] {
+  return reasons.filter((reason) => reason.startsWith("apply_"));
+}
+
+function applyCriticalReasonsPersist(
+  beforeReasons: string[],
+  afterReasons: string[]
+): boolean {
+  const beforeApply = getApplyCriticalReasons(beforeReasons);
+  const afterApply = getApplyCriticalReasons(afterReasons);
+  if (beforeApply.length === 0) return false;
+  return beforeApply.every((reason) => afterApply.includes(reason));
+}
+
+function isApplyRichSource(context: TransformContext): boolean {
+  return (
+    context.sourceComplexity === "medio" ||
+    context.sourceComplexity === "largo" ||
+    context.sourceComplexity === "complejo" ||
+    context.conceptualRichness === "high"
+  );
+}
+
+function buildApplyActionBlockSchemaHint(context: TransformContext): string {
+  const conceptHints = context.comparesMultipleConcepts
+    ? [
+        "Traduce cada concepto clave de la fuente en aplicabilidad concreta:",
+        "- dopamina → diseño de inicio, recompensa inmediata pequeña, saliencia del primer paso",
+        "- motivación → no esperar ganas; reducir fricción y arranque mínimo",
+        "- disciplina → sistema, ambiente y ritual; no depender de fuerza de voluntad",
+        "- TDAH → organizar el día con anclajes, secuencias cortas y feedback rápido",
+      ]
+    : [
+        "Traduce cada concepto clave de la fuente en decisiones o acciones concretas.",
+      ];
+
+  return [
+    "FORMATO OBLIGATORIO PARA actionBlocks (solo esto cuenta en el evaluador):",
+    "1) Bloque content con kind: 'action' (type: 'prose' o type: 'list'), O",
+    "2) Callout con label exacto 'Para aplicarlo', 'Siguiente paso' o 'Precaución'.",
+    "Ejemplo list accionable: { type: 'list', kind: 'action', text: 'Qué hacer hoy', items: [{ strong: 'Primer paso', span: 'detalle' }] }",
+    "Ejemplo callout accionable: { type: 'callout', kind: 'action', label: 'Para aplicarlo', text: '...' }",
+    ...conceptHints,
+    "Incluye criterios de decisión, errores a evitar y siguiente paso concreto.",
+    "No uses solo prosa teórica: cada bloque accionable debe decir qué hacer, cómo decidir o qué evitar.",
+  ].join("\n");
+}
+
+function scoreQualityEvaluation(
+  evaluation: TransformQualityEvaluation,
+  intent: MapIntent
+): number {
+  const { metrics, reasons, passed } = evaluation;
+  let score = passed ? 1_000 : 0;
+  score -= reasons.length * 40;
+  for (const reason of reasons) {
+    if (CRITICAL_QUALITY_REASONS.has(reason)) score -= 35;
+    if (intent === "apply" && reason.startsWith("apply_")) score -= 90;
+  }
+  score += metrics.totalStepWords * 0.15;
+  score += metrics.avgWordsPerStep * 0.5;
+  score += metrics.understandCallouts * 18;
+  score += metrics.tldrCount * 10;
+  score += metrics.knowledgeSectionCount * 14;
+  if (intent === "apply") score += metrics.actionBlocks * 28;
+  return score;
+}
+
+function isRepairEffective(
+  before: TransformQualityEvaluation,
+  after: TransformQualityEvaluation,
+  intent: MapIntent
+): boolean {
+  if (after.passed && !before.passed) return true;
+  if (after.passed && before.passed) return true;
+
+  if (intent === "apply") {
+    const beforeApply = getApplyCriticalReasons(before.reasons);
+    const afterApply = getApplyCriticalReasons(after.reasons);
+    const actionBlocksIncreased = after.metrics.actionBlocks > before.metrics.actionBlocks;
+    const applyCriticalReduced = afterApply.length < beforeApply.length;
+
+    if (after.passed) return true;
+    if (actionBlocksIncreased) return true;
+    if (applyCriticalReduced) return true;
+
+    if (
+      !after.passed &&
+      applyCriticalReasonsPersist(before.reasons, after.reasons) &&
+      after.metrics.actionBlocks <= before.metrics.actionBlocks
+    ) {
+      return false;
+    }
+
+    return false;
+  }
+
+  const beforeCritical = countCriticalQualityReasons(before.reasons);
+  const afterCritical = countCriticalQualityReasons(after.reasons);
+  if (afterCritical < beforeCritical) return true;
+
+  if (after.metrics.understandCallouts > before.metrics.understandCallouts) return true;
+  if (after.metrics.knowledgeSectionCount > before.metrics.knowledgeSectionCount) return true;
+  if (after.metrics.tldrCount > before.metrics.tldrCount + 1) return true;
+
+  const beforeScore = scoreQualityEvaluation(before, intent);
+  const afterScore = scoreQualityEvaluation(after, intent);
+  if (afterScore > beforeScore + 8) return true;
+
+  if (
+    after.metrics.totalStepWords >= before.metrics.totalStepWords + 35 &&
+    after.metrics.avgWordsPerStep >= before.metrics.avgWordsPerStep + 12
+  ) {
+    return true;
+  }
+
+  if (
+    after.metrics.stepsLength === before.metrics.stepsLength &&
+    after.metrics.actionBlocks === before.metrics.actionBlocks &&
+    after.metrics.totalStepWords <= before.metrics.totalStepWords + 10 &&
+    after.reasons.length >= before.reasons.length
+  ) {
+    return false;
+  }
+
+  return afterScore > beforeScore;
+}
+
+function buildRepairReasonInstructions(
+  reasons: string[],
+  context: TransformContext,
+  contract: AdaptiveQualityContract,
+  metrics: TransformQualityMetrics
+): string[] {
+  const instructions: string[] = [];
+  const conceptCount = Math.max(context.substantiveConceptCount, 2);
+
+  for (const reason of reasons) {
+    switch (reason) {
+      case "profundo_collapsed_for_rich_source":
+        instructions.push(
+          "COLAPSO EN PROFUNDO: La fuente es rica pero el mapa comprime demasiado. Separa mejor los conceptos importantes de la fuente. Reorganiza o enriquece pasos existentes con más sustancia interna por bloque. Evita resúmenes genéricos tipo ficha escolar."
+        );
+        break;
+      case "profundo_insufficient_conceptual_density":
+        instructions.push(
+          `BAJA DENSIDAD CONCEPTUAL: El mapa tiene ~${metrics.totalStepWords} palabras útiles en pasos (~${metrics.avgWordsPerStep}/paso). Debe ser claramente más sustancioso que el original. Aumenta densidad interna de párrafos, callouts y bullets sin añadir pasos vacíos.`
+        );
+        break;
+      case "profundo_missing_conceptual_scaffolding":
+        instructions.push(
+          "FALTA ANDAMIAJE CONCEPTUAL: Añade callouts con labels como Idea clave, Matiz o Ejemplo. Refuerza tldr y, si ayuda, knowledgeSections para anclar relaciones entre conceptos."
+        );
+        break;
+      case "profundo_underdeveloped_multi_concept":
+        instructions.push(
+          `MULTI-CONCEPTO SUBDESARROLLADO: La fuente implica ~${conceptCount} conceptos relacionados. Desarrolla cada uno con diferencias reales, relaciones, matices y un ejemplo breve cuando ayude. No los mezcles en un solo bloque genérico.`
+        );
+        break;
+      case "profundo_steps_not_internally_rich":
+        instructions.push(
+          "PASOS INTERNAMENTE POBRES: En profundidad breve, enriquece bloques internos (texto, callouts, bullets) en lugar de inflar el número de pasos."
+        );
+        break;
+      case "apply_insufficient_actionability_for_rich_source":
+        instructions.push(
+          `POCA APLICABILIDAD (${metrics.actionBlocks} actionBlocks medidos): Añade bloques accionables adicionales con kind 'action' o callouts 'Para aplicarlo'/'Siguiente paso'/'Precaución'. Debe haber más actionBlocks medibles que ahora (${metrics.actionBlocks}).`
+        );
+        break;
+      case "apply_too_theoretical_for_rich_source":
+      case "apply_too_theoretical":
+        instructions.push(
+          "DEMASIADO TEÓRICO PARA APLICAR: Convierte cada concepto en decisión/acción concreta con criterio, error a evitar y siguiente paso. Sustituye o complementa prosa teórica con bloques kind 'action'."
+        );
+        break;
+      case "apply_missing_actionability":
+        instructions.push(
+          "SIN ACCIONABILIDAD: Incluye al menos un bloque kind 'action' o callout 'Para aplicarlo' con pasos/decisiones concretas derivadas solo de la fuente."
+        );
+        break;
+      case "understand_too_superficial":
+        instructions.push(
+          "COMPRENSIÓN SUPERFICIAL: Profundiza mecanismos, relaciones y matices. No te quedes en definiciones de una línea."
+        );
+        break;
+      case "understand_missing_relations_or_nuance":
+        instructions.push(
+          "FALTAN RELACIONES/MATICES: Explica cómo interactúan los conceptos, por qué se confunden y qué los diferencia en la práctica."
+        );
+        break;
+      case "understand_over_action_oriented":
+        instructions.push(
+          "DEMASIADO ORIENTADO A ACCIÓN PARA ENTENDER: Reduce checklist y refuerza comprensión conceptual, relaciones y matices."
+        );
+        break;
+      case "generic_superficial_output":
+        instructions.push(
+          "SALIDA GENÉRICA: Evita bullets vagos. Nombra conceptos concretos de la fuente y explica relaciones reales entre ellos."
+        );
+        break;
+      case "estandar_undercoverage_for_dense_source":
+      case "estandar_too_compressed":
+        instructions.push(
+          "COBERTURA INSUFICIENTE: Equilibra claridad y cobertura de ideas principales sin granularidad vacía."
+        );
+        break;
+      case "rapido_lost_essential_ideas":
+        instructions.push(
+          "NÚCLEO PERDIDO EN RÁPIDO: Conserva síntesis pero recupera ideas esenciales que faltan."
+        );
+        break;
+      case "missing_core_idea":
+        instructions.push(
+          "FALTA coreIdea: Define una idea central clara y fiel a la fuente."
+        );
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (context.resolvedIntent === "understand") {
+    instructions.push(
+      "INTENT ENTENDER: Prioriza comprensión conceptual. Explica diferencias reales, por qué se confunden los conceptos y cómo interactúan. Usa callouts Matiz/Ejemplo cuando ayuden. No conviertas todo en checklist ni actionBlocks."
+    );
+  } else if (context.resolvedIntent === "apply") {
+    instructions.push(
+      "INTENT APLICAR: Traduce cada concepto clave en decisiones o acciones. Incluye criterios prácticos, errores a evitar y siguiente paso. Aumenta actionBlocks medibles (kind 'action' o callouts de aplicación). No te quedes en teoría."
+    );
+    if (isApplyRichSource(context)) {
+      instructions.push(
+        "FUENTE RICA + APPLY: Cada concepto principal de la fuente debe tener traducción práctica explícita. Si hay dopamina/motivación/disciplina/TDAH u organización del día, conviértelos en decisiones concretas para hoy."
+      );
+    }
+  }
+
+  if (contract.depth === "profundo" && isQualityRichSource(contract.sourceComplexity, context)) {
+    instructions.push(
+      "PROFUNDIDAD ACTIVA: La reparación debe ser claramente más sustanciosa que el mapa original (más densidad por bloque, relaciones y matices). No uses un número fijo de pasos; prioriza riqueza interna medible."
+    );
+  }
+
+  return [...new Set(instructions)];
+}
+
+function isTransformRequestCancelled(
+  req?: express.Request,
+  res?: express.Response
+): boolean {
+  if (req?.aborted) return true;
+  if (res?.writableEnded || res?.destroyed) return true;
+  return false;
+}
+
+function buildAdaptiveRepairPrompt(
+  context: TransformContext,
+  existingMap: ActionMapData,
+  contract: AdaptiveQualityContract,
+  evaluation: TransformQualityEvaluation
+): string {
+  const mapSnapshot = {
+    title: existingMap.title,
+    coreIdea: existingMap.coreIdea,
+    coreSupport: existingMap.coreSupport,
+    tldr: existingMap.tldr,
+    knowledgeSections: existingMap.knowledgeSections,
+    steps: existingMap.steps,
+    completionCard: existingMap.completionCard,
+    coverage: existingMap.coverage,
+    intent: context.resolvedIntent,
+  };
+  const reasonInstructions = buildRepairReasonInstructions(
+    evaluation.reasons,
+    context,
+    contract,
+    evaluation.metrics
+  );
+  const metrics = evaluation.metrics;
+  const applySchemaHint =
+    context.resolvedIntent === "apply" && isApplyRichSource(context)
+      ? buildApplyActionBlockSchemaHint(context)
+      : null;
+
+  return [
+    "REPARACIÓN ADAPTATIVA DE CALIDAD — devuelve SOLO JSON válido del mismo schema.",
+    "No rehagas desde cero: expande o corrige el mapa existente de forma proporcional y MEDIBLE.",
+    "No inventes datos fuera de la fuente. Conserva idioma, intent y estructura general salvo que reorganizar mejore claridad.",
+    `Intent activo: ${context.resolvedIntent}. Profundidad activa: ${context.resolvedDepth}.`,
+    `Complejidad estimada: ${contract.sourceComplexity} | Riqueza conceptual: ${context.conceptualRichness} | Señales: ${context.conceptSignalCount}.`,
+    `Métricas actuales del mapa: ${metrics.stepsLength} pasos, ${metrics.totalStepWords} palabras en pasos, ${metrics.avgWordsPerStep} palabras/paso, ${metrics.understandCallouts} callouts conceptuales, ${metrics.actionBlocks} actionBlocks, ${metrics.tldrCount} bullets tldr, ${metrics.knowledgeSectionCount} knowledgeSections.`,
+    `Problemas detectados (códigos): ${evaluation.reasons.join(", ")}.`,
+    "INSTRUCCIONES ESPECÍFICAS POR PROBLEMA:",
+    reasonInstructions.map((item, index) => `${index + 1}. ${item}`).join("\n"),
+    ...(applySchemaHint ? [applySchemaHint] : []),
+    context.sourceTextPreview
+      ? `Extracto de la fuente (referencia, no repetir literalmente completo):\n${context.sourceTextPreview.slice(0, 1_800)}`
+      : "La fuente es binaria o externa; mejora usando solo el mapa y sus límites declarados.",
+    "Mapa actual a mejorar (JSON):",
+    JSON.stringify(mapSnapshot),
+    "REQUISITOS DE SALIDA:",
+    "- Debe ser claramente más sustancioso que el mapa actual en los aspectos señalados.",
+    "- En profundo sobre fuente rica: más densidad interna, relaciones, matices y ejemplos breves si ayudan.",
+    "- En apply: más aplicabilidad medible — actionBlocks adicionales con kind 'action' o callouts Para aplicarlo/Siguiente paso/Precaución.",
+    "- Si la fuente es breve, enriquece bloques internos; no inflar pasos vacíos.",
+    "- Evita respuestas genéricas tipo resumen escolar.",
+    `El campo JSON "intent" debe ser exactamente "${context.resolvedIntent}".`,
+  ].join("\n\n");
+}
+
+function resolveRepairModelChain(usedModel: string): string[] {
+  const chain = [usedModel];
+  if (usedModel !== "gemini-3.1-flash-lite") {
+    chain.push("gemini-3.1-flash-lite");
+  }
+  return chain;
+}
+
+async function attemptQualityRepair(
+  map: ActionMapData,
+  context: TransformContext,
+  usedModel: string,
+  contract: AdaptiveQualityContract,
+  evaluation: TransformQualityEvaluation
+): Promise<ActionMapData | null> {
+  const repairPrompt = buildAdaptiveRepairPrompt(context, map, contract, evaluation);
+  const repairTokens =
+    context.resolvedDepth === "profundo"
+      ? context.maxOutputTokens
+      : Math.min(context.maxOutputTokens, MAX_OUTPUT_TOKENS_STANDARD);
+
+  try {
+    const { response, model: repairModel } = await generateWithFallback(
+      {
+        contents: repairPrompt,
+        config: getRepairGenerationConfig(repairTokens),
+      },
+      resolveRepairModelChain(usedModel)
+    );
+
+    return parseAndNormalizeMapJson(response.text || "{}", context, repairModel);
+  } catch (err) {
+    if (shouldLogTransformDebug()) {
+      safeTransformDebugLog("[transform-quality-repair-error]", {
+        message: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+        usedModel,
+      });
+    }
+    return null;
+  }
+}
+
+function resolveRepairOutcome(
+  originalMap: ActionMapData,
+  repairedMap: ActionMapData | null,
+  beforeEvaluation: TransformQualityEvaluation,
+  context: TransformContext,
+  contract: AdaptiveQualityContract
+): {
+  map: ActionMapData;
+  applied: boolean;
+  effective: boolean;
+  finalEvaluation: TransformQualityEvaluation;
+  repairedEvaluation: TransformQualityEvaluation | null;
+  usedRepairModel: string | null;
+  repairOutcomeReason: string;
+} {
+  if (!repairedMap) {
+    return {
+      map: originalMap,
+      applied: false,
+      effective: false,
+      finalEvaluation: beforeEvaluation,
+      repairedEvaluation: null,
+      usedRepairModel: null,
+      repairOutcomeReason: "repair_parse_or_request_failed",
+    };
+  }
+
+  const repairedEvaluation = evaluateTransformQuality(repairedMap, contract, context);
+  const effective = isRepairEffective(beforeEvaluation, repairedEvaluation, context.resolvedIntent);
+
+  if (context.resolvedIntent === "apply") {
+    if (effective) {
+      return {
+        map: repairedMap,
+        applied: true,
+        effective: true,
+        finalEvaluation: repairedEvaluation,
+        repairedEvaluation,
+        usedRepairModel: repairedMap.modelUsed ?? null,
+        repairOutcomeReason: repairedEvaluation.passed
+          ? "apply_quality_passed"
+          : "apply_actionability_improved",
+      };
+    }
+
+    return {
+      map: originalMap,
+      applied: false,
+      effective: false,
+      finalEvaluation: beforeEvaluation,
+      repairedEvaluation,
+      usedRepairModel: repairedMap.modelUsed ?? null,
+      repairOutcomeReason: applyCriticalReasonsPersist(
+        beforeEvaluation.reasons,
+        repairedEvaluation.reasons
+      ) && repairedEvaluation.metrics.actionBlocks <= beforeEvaluation.metrics.actionBlocks
+        ? "apply_critical_reasons_unchanged_no_actionblock_gain"
+        : "apply_no_measurable_improvement",
+    };
+  }
+
+  if (effective) {
+    return {
+      map: repairedMap,
+      applied: true,
+      effective: true,
+      finalEvaluation: repairedEvaluation,
+      repairedEvaluation,
+      usedRepairModel: repairedMap.modelUsed ?? null,
+      repairOutcomeReason: repairedEvaluation.passed
+        ? "quality_passed"
+        : "measurable_improvement",
+    };
+  }
+
+  const beforeScore = scoreQualityEvaluation(beforeEvaluation, context.resolvedIntent);
+  const afterScore = scoreQualityEvaluation(repairedEvaluation, context.resolvedIntent);
+  if (afterScore > beforeScore) {
+    return {
+      map: repairedMap,
+      applied: true,
+      effective: false,
+      finalEvaluation: repairedEvaluation,
+      repairedEvaluation,
+      usedRepairModel: repairedMap.modelUsed ?? null,
+      repairOutcomeReason: "score_improved_below_effective_threshold",
+    };
+  }
+
+  return {
+    map: originalMap,
+    applied: false,
+    effective: false,
+    finalEvaluation: beforeEvaluation,
+    repairedEvaluation,
+    usedRepairModel: repairedMap.modelUsed ?? null,
+    repairOutcomeReason: "kept_original_no_improvement",
+  };
 }
 
 function logTransformEntryDebug(
@@ -349,7 +1322,10 @@ function logTransformEntryDebug(
 function logTransformResultDebug(
   context: TransformContext,
   normalized: ActionMapData,
-  usedModel: string | null
+  usedModel: string | null,
+  qualityMeta?: QualityRepairMeta,
+  evaluation?: TransformQualityEvaluation,
+  contract?: AdaptiveQualityContract
 ): void {
   safeTransformDebugLog("[transform-result-debug]", {
     resolvedIntent: context.resolvedIntent,
@@ -360,6 +1336,30 @@ function logTransformResultDebug(
     title: truncateDebugText(normalized.title),
     hasCompletionCard: Boolean(normalized.completionCard?.title?.trim()),
     usedModel,
+    qualityRepairAttempted: qualityMeta?.qualityRepairAttempted ?? false,
+    qualityRepairApplied: qualityMeta?.qualityRepairApplied ?? false,
+    qualityRepairEffective: qualityMeta?.qualityRepairEffective ?? false,
+    qualityRepairReasons: qualityMeta?.qualityRepairReasons ?? null,
+    qualityReasonsBeforeRepair: qualityMeta?.qualityReasonsBeforeRepair ?? null,
+    qualityReasonsAfterRepair: qualityMeta?.qualityReasonsAfterRepair ?? null,
+    applyCriticalReasonsBefore: qualityMeta?.applyCriticalReasonsBefore ?? null,
+    applyCriticalReasonsAfter: qualityMeta?.applyCriticalReasonsAfter ?? null,
+    repairOutcomeReason: qualityMeta?.repairOutcomeReason ?? null,
+    sourceComplexity: qualityMeta?.sourceComplexity ?? context.sourceComplexity,
+    depthQualityVerdict:
+      qualityMeta?.depthQualityVerdict ?? contract?.depthQualityVerdict ?? null,
+    intentQualityVerdict:
+      qualityMeta?.intentQualityVerdict ?? contract?.intentQualityVerdict ?? null,
+    stepsBeforeRepair: qualityMeta?.stepsBeforeRepair ?? null,
+    actionBlocksBeforeRepair: qualityMeta?.actionBlocksBeforeRepair ?? null,
+    stepsAfterRepair: qualityMeta?.stepsAfterRepair ?? null,
+    actionBlocksAfterRepair: qualityMeta?.actionBlocksAfterRepair ?? null,
+    usedRepairModel: qualityMeta?.usedRepairModel ?? null,
+    qualityPassed: evaluation?.passed ?? null,
+    qualityReasons: evaluation?.reasons ?? null,
+    conceptSignalCount: context.conceptSignalCount,
+    conceptualRichness: context.conceptualRichness,
+    complexityReasons: context.complexityReasons,
   });
 }
 
@@ -374,6 +1374,15 @@ type TransformContext = {
   mapId?: string;
   maxOutputTokens: number;
   existingCategories: string[];
+  sourceInputLength: number;
+  sourceTextPreview: string;
+  sourceComplexity: SourceComplexity;
+  conceptSignalCount: number;
+  conceptualRichness: ConceptualRichness;
+  complexityReasons: string[];
+  substantiveConceptCount: number;
+  combinesUnderstandAndApply: boolean;
+  comparesMultipleConcepts: boolean;
 };
 
 async function buildTransformContext(body: TransformRequest): Promise<TransformContext | { error: string; status: number }> {
@@ -464,6 +1473,14 @@ async function buildTransformContext(body: TransformRequest): Promise<TransformC
     resolvedDepth
   );
 
+  const sourceTextPreview = resolveSourceTextPreview(body, contents);
+  const sourceInputLength = sourceTextPreview.length || estimateTransformInputLength(body);
+  const complexityProfile = estimateSourceComplexityProfile({
+    inputLength: sourceInputLength,
+    sourceKind: type,
+    textPreview: sourceTextPreview,
+  });
+
   return {
     contents,
     modelChain,
@@ -477,6 +1494,15 @@ async function buildTransformContext(body: TransformRequest): Promise<TransformC
     existingCategories: Array.isArray(existingCategories)
       ? existingCategories.filter((item) => typeof item === 'string').slice(0, 20)
       : [],
+    sourceInputLength,
+    sourceTextPreview,
+    sourceComplexity: complexityProfile.sourceComplexity,
+    conceptSignalCount: complexityProfile.conceptSignalCount,
+    conceptualRichness: complexityProfile.conceptualRichness,
+    complexityReasons: complexityProfile.complexityReasons,
+    substantiveConceptCount: complexityProfile.substantiveConceptCount,
+    combinesUnderstandAndApply: complexityProfile.combinesUnderstandAndApply,
+    comparesMultipleConcepts: complexityProfile.comparesMultipleConcepts,
   };
 }
 
@@ -491,7 +1517,7 @@ function geminiGenerationConfig(maxOutputTokens: number) {
   };
 }
 
-function finalizeMapJson(
+function parseAndNormalizeMapJson(
   jsonText: string,
   context: TransformContext,
   usedModel: string
@@ -509,14 +1535,100 @@ function finalizeMapJson(
     existingCategories: context.existingCategories,
   });
   normalized.modelUsed = usedModel;
+  return normalized;
+}
+
+async function finalizeMapJson(
+  jsonText: string,
+  context: TransformContext,
+  usedModel: string,
+  options?: { req?: express.Request; res?: express.Response }
+): Promise<ActionMapData> {
+  let normalized = parseAndNormalizeMapJson(jsonText, context, usedModel);
+  const contract = getAdaptiveQualityContract(
+    context.resolvedIntent,
+    context.resolvedDepth,
+    context.sourceComplexity
+  );
+  const evaluation = evaluateTransformQuality(normalized, contract, context);
+
+  const qualityMeta: QualityRepairMeta = {
+    qualityRepairAttempted: false,
+    qualityRepairApplied: false,
+    qualityRepairEffective: false,
+    qualityRepairReasons: null,
+    qualityReasonsBeforeRepair: null,
+    qualityReasonsAfterRepair: evaluation.passed ? [] : evaluation.reasons,
+    applyCriticalReasonsBefore: null,
+    applyCriticalReasonsAfter: null,
+    repairOutcomeReason: null,
+    sourceComplexity: context.sourceComplexity,
+    depthQualityVerdict: contract.depthQualityVerdict,
+    intentQualityVerdict: contract.intentQualityVerdict,
+    stepsBeforeRepair: null,
+    actionBlocksBeforeRepair: null,
+    stepsAfterRepair: normalized.steps?.length ?? 0,
+    actionBlocksAfterRepair: countActionBlocks(normalized),
+    usedRepairModel: null,
+  };
+
+  let finalEvaluation = evaluation;
+
+  if (
+    shouldRepairTransformQuality(evaluation) &&
+    !isTransformRequestCancelled(options?.req, options?.res)
+  ) {
+    qualityMeta.qualityRepairAttempted = true;
+    qualityMeta.qualityRepairReasons = evaluation.reasons;
+    qualityMeta.qualityReasonsBeforeRepair = evaluation.reasons;
+    qualityMeta.applyCriticalReasonsBefore = getApplyCriticalReasons(evaluation.reasons);
+    qualityMeta.stepsBeforeRepair = evaluation.metrics.stepsLength;
+    qualityMeta.actionBlocksBeforeRepair = evaluation.metrics.actionBlocks;
+
+    const repaired = await attemptQualityRepair(
+      normalized,
+      context,
+      usedModel,
+      contract,
+      evaluation
+    );
+
+    const outcome = resolveRepairOutcome(
+      normalized,
+      repaired,
+      evaluation,
+      context,
+      contract
+    );
+
+    normalized = outcome.map;
+    finalEvaluation = outcome.finalEvaluation;
+    qualityMeta.qualityRepairApplied = outcome.applied;
+    qualityMeta.qualityRepairEffective = outcome.effective;
+    qualityMeta.usedRepairModel = outcome.usedRepairModel;
+    qualityMeta.repairOutcomeReason = outcome.repairOutcomeReason;
+    qualityMeta.qualityReasonsAfterRepair =
+      outcome.repairedEvaluation?.reasons ?? outcome.finalEvaluation.reasons;
+    qualityMeta.applyCriticalReasonsAfter = getApplyCriticalReasons(
+      outcome.repairedEvaluation?.reasons ?? outcome.finalEvaluation.reasons
+    );
+    qualityMeta.stepsAfterRepair = outcome.repairedEvaluation
+      ? outcome.repairedEvaluation.metrics.stepsLength
+      : outcome.map.steps?.length ?? 0;
+    qualityMeta.actionBlocksAfterRepair = outcome.repairedEvaluation
+      ? outcome.repairedEvaluation.metrics.actionBlocks
+      : countActionBlocks(outcome.map);
+  }
+
   cacheMap(context.mapId, normalized);
-  logTransformResultDebug(context, normalized, usedModel);
+  logTransformResultDebug(context, normalized, usedModel, qualityMeta, finalEvaluation, contract);
   return normalized;
 }
 
 async function handleTransformStream(
   context: TransformContext,
-  res: express.Response
+  res: express.Response,
+  req?: express.Request
 ): Promise<void> {
   res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -599,7 +1711,7 @@ async function handleTransformStream(
 
   console.log(`Mapa generado en streaming con el modelo "${usedModel}".`);
 
-  const normalized = finalizeMapJson(fullText, context, usedModel);
+  const normalized = await finalizeMapJson(fullText, context, usedModel, { req, res });
   writeStreamEvent(res, { type: "done", map: normalized, model: usedModel });
   res.end();
 }
@@ -806,6 +1918,23 @@ Reglas obligatorias:
 10. Devuelve solo JSON válido compatible con el esquema pedido.
 11. Filtra el ruido y cubre las ideas relevantes según el contrato de profundidad activo. La cobertura completa tiene prioridad salvo cuando depth activo sea rapido; en rapido debes sintetizar y agrupar, declarando omisiones en coverage.limitations si procede.
 12. El campo "intent" en el JSON debe coincidir exactamente con el intent activo del contrato (understand, study o apply).`;
+
+function getRepairGenerationConfig(maxOutputTokens: number) {
+  return {
+    systemInstruction: `${SYSTEM_PROMPT}
+
+MODO REPARACIÓN DE CALIDAD:
+Estás corrigiendo un mapa existente que falló evaluación de calidad.
+Debes hacer cambios sustantivos y medibles en densidad, relaciones, matices o aplicabilidad según las instrucciones del prompt.
+Prioriza enriquecer bloques internos antes de inflar pasos vacíos.
+Devuelve únicamente JSON válido compatible con el esquema.`,
+    responseMimeType: "application/json",
+    responseSchema: schema as any,
+    temperature: 0.35,
+    topP: 0.9,
+    maxOutputTokens,
+  };
+}
 
 function intentLabel(intent: MapIntent) {
   if (intent === "study") return "Estudiar";
@@ -1488,7 +2617,10 @@ async function startServer() {
       res.setHeader("X-Gemini-Model-Used", usedModel);
       console.log(`Mapa generado con el modelo "${usedModel}".`);
 
-      const normalized = finalizeMapJson(response.text || "{}", contextResult, usedModel);
+      const normalized = await finalizeMapJson(response.text || "{}", contextResult, usedModel, {
+        req,
+        res,
+      });
       res.json(normalized);
     } catch (err: any) {
       console.error(err);
@@ -1513,7 +2645,7 @@ async function startServer() {
 
       logTransformEntryDebug(req.body as TransformRequest, contextResult, "/api/transform/stream");
 
-      await handleTransformStream(contextResult, res);
+      await handleTransformStream(contextResult, res, req);
     } catch (err: any) {
       console.error(err);
       const { errorMessage } = describeGeminiError(err);
