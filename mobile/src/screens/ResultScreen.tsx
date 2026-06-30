@@ -23,6 +23,7 @@ import { useMapHeaderAutoHide } from '../hooks/useMapHeaderAutoHide';
 import SourceMetadataGlassCard from '../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../components/StepContentBlocks';
 import StepFooterNav from '../components/StepFooterNav';
+import SourceCoverageCard from '../components/SourceCoverageCard';
 import TakeawaysGlassCard from '../components/TakeawaysGlassCard';
 import { stepHaptic, useAppSession } from '../context/AppSessionContext';
 import { useViewAllScrollSpy } from '../hooks/useViewAllScrollSpy';
@@ -292,6 +293,11 @@ export default function ResultScreen() {
         {data.completionCard?.summary || 'Aquí tienes lo esencial para retomarlo con rapidez.'}
       </Text>
       <TakeawaysGlassCard items={data.completionCard?.takeaways ?? []} />
+      <SourceCoverageCard
+        coverage={data.coverage}
+        limitations={data.sourceMetadata?.limitations}
+        knowledgeSectionsCount={data.knowledgeSections?.length}
+      />
 
       <View className="mt-10 flex-row flex-wrap gap-3" style={styles.completionActions}>
         {[

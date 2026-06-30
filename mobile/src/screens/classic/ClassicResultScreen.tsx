@@ -18,6 +18,7 @@ import { useMapHeaderAutoHide } from '../../hooks/useMapHeaderAutoHide';
 import SourceMetadataGlassCard from '../../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../../components/StepContentBlocks';
 import StepFooterNav from '../../components/StepFooterNav';
+import SourceCoverageCard from '../../components/SourceCoverageCard';
 import { useAppSession } from '../../context/AppSessionContext';
 import { useViewAllScrollSpy } from '../../hooks/useViewAllScrollSpy';
 
@@ -206,6 +207,12 @@ export default function ClassicResultScreen() {
       <Text className="mt-4 text-lg text-neutral-600 dark:text-neutral-400 text-center leading-7 px-4">
         Has completado los {session.totalSteps} pasos de este mapa de acción.
       </Text>
+      <SourceCoverageCard
+        coverage={data.coverage}
+        limitations={data.sourceMetadata?.limitations}
+        knowledgeSectionsCount={data.knowledgeSections?.length}
+        className="mt-6 w-full"
+      />
       <View className="mt-10 w-full gap-3">
         <Pressable
           onPress={() => session.goToStep(0)}
