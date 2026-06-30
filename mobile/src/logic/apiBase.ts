@@ -15,16 +15,13 @@ function getMetroHost(): string | null {
   return hostUri.split(':')[0]?.trim() || null;
 }
 
-function isLocalApiUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url);
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
-    if (hostname.startsWith('192.168.')) return true;
-    if (hostname.startsWith('10.')) return true;
-    return /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
-  } catch {
-    return false;
-  }
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1'
+  );
 }
 
 function isPhysicalDeviceHost(host: string): boolean {
@@ -42,15 +39,13 @@ export function getApiBaseUrl(): string {
   const metroHost = __DEV__ ? getMetroHost() : null;
 
   if (configured) {
-    if (__DEV__ && metroHost && isLocalApiUrl(configured)) {
+    if (__DEV__ && metroHost) {
       const parsed = new URL(configured);
-      const loopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+      const isLoopback = isLoopbackHost(parsed.hostname);
 
-      if (loopback && isPhysicalDeviceHost(metroHost)) {
-        return rewriteLocalHost(configured, metroHost);
-      }
-
-      if (isPhysicalDeviceHost(metroHost) && parsed.hostname !== metroHost) {
+      // An explicit LAN IPv4 API base from .env is authoritative on physical devices;
+      // do not rewrite it to Metro host because Metro may resolve to IPv6/hostname while backend listens on IPv4.
+      if (isLoopback && isPhysicalDeviceHost(metroHost)) {
         return rewriteLocalHost(configured, metroHost);
       }
     }

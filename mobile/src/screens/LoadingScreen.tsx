@@ -6,14 +6,14 @@ import SessionErrorBanner from '../components/SessionErrorBanner';
 import { useAppSession } from '../context/AppSessionContext';
 
 export default function LoadingScreen() {
-  const { handleCancelLoading } = useAppSession();
+  const { handleCancelLoading, depthPreference } = useAppSession();
 
   return (
     <SafeAreaView className="flex-1 bg-neutral-50 dark:bg-neutral-900">
       <View className="px-4 pt-2">
         <SessionErrorBanner />
       </View>
-      <LoadingState onCancel={handleCancelLoading} />
+      <LoadingState onCancel={handleCancelLoading} depth={depthPreference} />
     </SafeAreaView>
   );
 }

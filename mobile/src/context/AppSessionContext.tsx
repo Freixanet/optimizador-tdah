@@ -673,13 +673,19 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       const sourceLabel =
         uploadedFile?.name || inputText.trim().split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
 
+      // Model selection is not user-facing in the current mobile UI, so stale persisted model preferences must not override depth-based routing.
+      let finalPreferredModel = 'auto';
+      if (depthPreference === 'rapido') {
+        finalPreferredModel = 'gemini-3.1-flash-lite';
+      }
+
       let body: TransformRequest;
       if (uploadedFile?.isPdf && uploadedFile.fileData) {
         body = {
           type: 'pdf',
           fileData: uploadedFile.fileData,
           mimeType: uploadedFile.mimeType || 'application/pdf',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',
@@ -691,7 +697,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
           type: 'video',
           fileData: uploadedFile.fileData,
           mimeType: uploadedFile.mimeType || 'video/mp4',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',
@@ -704,7 +710,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
           type: 'image',
           fileData: uploadedFile.fileData,
           mimeType: uploadedFile.mimeType || 'image/jpeg',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',
@@ -716,7 +722,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         body = {
           text: urlDetection.url,
           type: 'youtube',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',
@@ -727,7 +733,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         body = {
           text: urlDetection.url,
           type: 'link',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',
@@ -738,7 +744,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         body = {
           text: inputText.trim(),
           type: 'text',
-          preferredModel: 'auto',
+          preferredModel: finalPreferredModel,
           intent,
           depth: depthPreference,
           outputLanguage: 'es',

@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { useTheme } from '../context/ThemeContext';
 import ExactLiquidOrbWebView from './ExactLiquidOrbWebView';
 import CompletionGlassButton from './CompletionGlassButton';
+import { type DepthPreference } from '../logic/depthPreference';
 
 const PHASES = [
   'Leyendo la fuente',
@@ -91,9 +92,10 @@ function PhaseStepper({ currentPhase, totalPhases }: { currentPhase: number; tot
 
 type LoadingStateProps = {
   onCancel: () => void;
+  depth?: DepthPreference;
 };
 
-export default function LoadingState({ onCancel }: LoadingStateProps) {
+export default function LoadingState({ onCancel, depth = 'estandar' }: LoadingStateProps) {
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [delayStage, setDelayStage] = useState(0);
@@ -110,19 +112,30 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
   }, []);
 
   useEffect(() => {
+    let delay1 = 20000; // Estándar default: 20s
+    let delay2 = 32000; // Estándar default: 32s
+
+    if (depth === 'rapido') {
+      delay1 = 15000; // Rápido: 15s
+      delay2 = 25000; // Rápido: 25s
+    } else if (depth === 'profundo') {
+      delay1 = 25000; // Profundo: 25s
+      delay2 = 40000; // Profundo: 40s
+    }
+
     const timer1 = setTimeout(() => {
       setDelayStage(1);
-    }, 10000);
+    }, delay1);
 
     const timer2 = setTimeout(() => {
       setDelayStage(2);
-    }, 18000);
+    }, delay2);
 
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, []);
+  }, [depth]);
 
   return (
     <View className="flex-1 justify-center px-6 pb-32 bg-neutral-50 dark:bg-neutral-900">
@@ -140,12 +153,12 @@ export default function LoadingState({ onCancel }: LoadingStateProps) {
           <View style={{ height: 48, justifyContent: 'center', marginTop: 16 }} className="px-4">
             {delayStage === 1 && (
               <Text className="text-[12px] leading-[18px] text-center text-neutral-500 dark:text-neutral-400 font-medium">
-                Está tardando un poco más de lo habitual. Puedes esperar unos segundos más.
+                La fuente está llevando algo más de tiempo. Puedes esperar unos segundos más.
               </Text>
             )}
             {delayStage === 2 && (
               <Text className="text-[12px] leading-[18px] text-center text-neutral-500 dark:text-neutral-400 font-medium">
-                La fuente parece pesada. Núcleo sigue trabajando; también puedes cancelar e intentarlo con algo más breve.
+                Sigue procesando la información. También puedes cancelar e intentarlo con algo más breve.
               </Text>
             )}
           </View>
