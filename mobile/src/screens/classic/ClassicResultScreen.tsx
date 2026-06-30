@@ -291,6 +291,7 @@ export default function ClassicResultScreen() {
 
           <Animated.View
             key={stepKey}
+            className="flex-1"
             entering={
               session.isStreamGenerating || session.viewAll ? undefined : FadeIn.duration(220)
             }

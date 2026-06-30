@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowRight, Check } from 'lucide-react-native';
 import StepFooterGlassButton from './StepFooterGlassButton';
 import { useAppSession } from '../context/AppSessionContext';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 type StepFooterNavProps = {
   completeLabel?: string;
@@ -13,6 +14,17 @@ export default function StepFooterNav({ completeLabel = 'Completar mapa' }: Step
   const session = useAppSession();
   const showStepFooter = !session.viewAll && !session.isComplete;
   const streamDimmed = session.isStreamGenerating;
+  const containerAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: withTiming(streamDimmed ? 0.5 : 1, { duration: 250 }),
+      transform: [
+        {
+          translateY: withTiming(streamDimmed ? 12 : 0, { duration: 250 }),
+        },
+      ],
+    };
+  }, [streamDimmed]);
+
 
   if (!showStepFooter) return null;
 
@@ -21,9 +33,9 @@ export default function StepFooterNav({ completeLabel = 'Completar mapa' }: Step
       edges={['bottom']}
       className="border-t border-neutral-200 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900"
     >
-      <View
+      <Animated.View
         className="py-4 px-7"
-        style={streamDimmed ? { opacity: 0.5 } : undefined}
+        style={containerAnimatedStyle}
         pointerEvents={streamDimmed ? 'none' : 'auto'}
       >
         {session.currentStep === 0 ? (
@@ -62,7 +74,7 @@ export default function StepFooterNav({ completeLabel = 'Completar mapa' }: Step
             </View>
           </View>
         )}
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }

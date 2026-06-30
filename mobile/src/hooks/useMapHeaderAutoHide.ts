@@ -12,7 +12,9 @@ import {
   READING_PROGRESS_LINE_HEIGHT,
 } from '../components/ReadingProgressBar';
 
-const HEADER_HIDE_HYSTERESIS = 6;
+const TOP_VISIBLE_THRESHOLD = 8;
+const HIDE_AFTER_SCROLL_Y = 24;
+const DIRECTION_DELTA = 10;
 
 type UseMapHeaderAutoHideOptions = {
   hideProgressLine: boolean;
@@ -24,17 +26,7 @@ type UseMapHeaderAutoHideOptions = {
   onScrollReport?: (scrollY: number, contentHeight: number) => void;
 };
 
-function computeHideThreshold(
-  hideProgressLine: boolean,
-  metaAnchorHeight: number,
-  headerBottom: number
-): number {
-  if (metaAnchorHeight <= 0) return 0;
-  return Math.max(0, mapContentTopPadding(hideProgressLine) + metaAnchorHeight - headerBottom);
-}
-
 export function useMapHeaderAutoHide({
-  hideProgressLine,
   mapKey,
   resetKey,
   scrollProgress,
@@ -43,61 +35,70 @@ export function useMapHeaderAutoHide({
   const scrollRef = useRef<Animated.ScrollView>(null);
   const lastMapKeyRef = useRef(mapKey);
   const headerVisible = useSharedValue(true);
+  const lastScrollY = useSharedValue(0);
+  const directionAnchorY = useSharedValue(0);
+  const isGoingDown = useSharedValue(false);
   const mapMetaAnchorHeight = useSharedValue(0);
-  const headerBottomHeight = useSharedValue(
-    READING_PROGRESS_BAR_HEIGHT + (hideProgressLine ? 0 : READING_PROGRESS_LINE_HEIGHT)
-  );
-  const hideScrollThreshold = useSharedValue(0);
-
-  useEffect(() => {
-    const bottom =
-      READING_PROGRESS_BAR_HEIGHT + (hideProgressLine ? 0 : READING_PROGRESS_LINE_HEIGHT);
-    headerBottomHeight.value = bottom;
-    hideScrollThreshold.value = computeHideThreshold(hideProgressLine, mapMetaAnchorHeight.value, bottom);
-  }, [hideProgressLine, headerBottomHeight, hideScrollThreshold, mapMetaAnchorHeight]);
 
   useEffect(() => {
     if (lastMapKeyRef.current !== mapKey) {
       lastMapKeyRef.current = mapKey;
       mapMetaAnchorHeight.value = 0;
-      hideScrollThreshold.value = 0;
     }
     headerVisible.value = true;
-    // Keep mapMetaAnchorHeight across step changes — title/metadata block is stable and
-    // onLayout often does not re-fire after we zero the height, leaving hide broken.
+    lastScrollY.value = 0;
+    directionAnchorY.value = 0;
+    isGoingDown.value = false;
     const task = InteractionManager.runAfterInteractions(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     });
     return () => task.cancel();
-  }, [mapKey, resetKey, headerVisible, hideScrollThreshold, mapMetaAnchorHeight]);
+  }, [mapKey, resetKey, headerVisible, lastScrollY, directionAnchorY, isGoingDown, mapMetaAnchorHeight]);
 
   const handleMapMetaAnchorLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const { height } = event.nativeEvent.layout;
       if (height <= 0) return;
       mapMetaAnchorHeight.value = height;
-      hideScrollThreshold.value = computeHideThreshold(
-        hideProgressLine,
-        height,
-        headerBottomHeight.value
-      );
     },
-    [headerBottomHeight, hideProgressLine, hideScrollThreshold, mapMetaAnchorHeight]
+    [mapMetaAnchorHeight]
   );
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       const currentY = event.contentOffset.y;
       const maxScroll = event.contentSize.height - event.layoutMeasurement.height;
-      const threshold = hideScrollThreshold.value;
+      const threshold = mapMetaAnchorHeight.value > 0 ? mapMetaAnchorHeight.value + 8 : 120;
 
-      if (currentY <= 0 || mapMetaAnchorHeight.value <= 0) {
+      if (currentY <= TOP_VISIBLE_THRESHOLD) {
         headerVisible.value = true;
-      } else if (currentY > threshold + HEADER_HIDE_HYSTERESIS) {
+        directionAnchorY.value = currentY;
+        lastScrollY.value = currentY;
+        return;
+      }
+
+      const isScrollingDown = currentY > lastScrollY.value;
+      const isScrollingUp = currentY < lastScrollY.value;
+
+      if (isScrollingDown && !isGoingDown.value) {
+        isGoingDown.value = true;
+        directionAnchorY.value = lastScrollY.value;
+      } else if (isScrollingUp && isGoingDown.value) {
+        isGoingDown.value = false;
+        directionAnchorY.value = lastScrollY.value;
+      }
+
+      const accumulatedDistance = currentY - directionAnchorY.value;
+
+      if (currentY < threshold) {
+        headerVisible.value = true;
+      } else if (currentY >= threshold && accumulatedDistance > DIRECTION_DELTA) {
         headerVisible.value = false;
-      } else if (currentY < threshold - HEADER_HIDE_HYSTERESIS) {
+      } else if (accumulatedDistance < -DIRECTION_DELTA) {
         headerVisible.value = true;
       }
+
+      lastScrollY.value = currentY;
 
       if (scrollProgress) {
         scrollProgress.value =

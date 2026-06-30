@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { Text, View, type LayoutChangeEvent } from 'react-native';
+import React, { useEffect } from 'react';
+import { Text, View } from 'react-native';
 import Animated, {
   Easing,
   SharedValue,
@@ -55,7 +55,6 @@ export default function ReadingProgressBar({
   const { isDark } = useTheme();
   const navIconColor = isDark ? '#d4d4d4' : '#525252';
   const stepProgressValue = useSharedValue(stepProgress / 100);
-  const navRowHeight = useSharedValue(READING_PROGRESS_BAR_HEIGHT);
 
   useEffect(() => {
     if (viewAll) return;
@@ -65,16 +64,6 @@ export default function ReadingProgressBar({
     });
   }, [stepProgress, stepProgressValue, viewAll]);
 
-  const handleNavRowLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const { height } = event.nativeEvent.layout;
-      if (height > 0) {
-        navRowHeight.value = height;
-      }
-    },
-    [navRowHeight]
-  );
-
   const barStyle = useAnimatedStyle(() => {
     const ratio = viewAll && scrollProgressShared ? scrollProgressShared.value : stepProgressValue.value;
     return {
@@ -83,7 +72,7 @@ export default function ReadingProgressBar({
   });
 
   const shellStyle = useAnimatedStyle(() => {
-    const navH = navRowHeight.value;
+    const navH = READING_PROGRESS_BAR_HEIGHT;
     const lineH = READING_PROGRESS_LINE_HEIGHT;
 
     if (!headerVisibleShared) {
@@ -102,12 +91,17 @@ export default function ReadingProgressBar({
   });
 
   const navAnimatedStyle = useAnimatedStyle(() => {
+    const offset = READING_PROGRESS_BAR_HEIGHT;
     if (!headerVisibleShared) {
-      return { transform: [{ translateY: 0 }], opacity: 1 };
+      return {
+        height: offset,
+        transform: [{ translateY: 0 }],
+        opacity: 1,
+      };
     }
 
-    const offset = navRowHeight.value;
     return {
+      height: offset,
       transform: [
         {
           translateY: withTiming(headerVisibleShared.value ? 0 : -offset, {
@@ -133,7 +127,7 @@ export default function ReadingProgressBar({
       return { top: 0 };
     }
 
-    const navH = navRowHeight.value;
+    const navH = READING_PROGRESS_BAR_HEIGHT;
     return {
       top: withTiming(headerVisibleShared.value ? navH : 0, { duration: 250 }),
     };
@@ -147,12 +141,11 @@ export default function ReadingProgressBar({
   return (
     <Animated.View
       style={shellStyle}
-      className="absolute left-0 right-0 top-0 z-50 overflow-hidden border-b border-neutral-200 dark:border-white/5"
+      className="absolute left-0 right-0 top-0 z-50 overflow-hidden"
     >
       <Animated.View
         animatedProps={navAnimatedProps}
         style={navAnimatedStyle}
-        onLayout={handleNavRowLayout}
         className="bg-neutral-50 dark:bg-neutral-900"
       >
         <View className="flex-row items-center justify-between gap-3 px-3 py-2.5">
@@ -198,6 +191,8 @@ export default function ReadingProgressBar({
           </View>
         </Animated.View>
       ) : null}
+
+      <View className="absolute left-0 right-0 bottom-0 h-[1px] bg-neutral-200 dark:bg-white/10" />
     </Animated.View>
   );
 }
