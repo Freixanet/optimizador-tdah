@@ -19,6 +19,7 @@ import SourceMetadataGlassCard from '../../components/SourceMetadataGlassCard';
 import StepContentBlocks from '../../components/StepContentBlocks';
 import StepFooterNav from '../../components/StepFooterNav';
 import SourceCoverageCard from '../../components/SourceCoverageCard';
+import KnowledgeSectionsList from '../../components/KnowledgeSectionsList';
 import { useAppSession } from '../../context/AppSessionContext';
 import { useViewAllScrollSpy } from '../../hooks/useViewAllScrollSpy';
 
@@ -213,6 +214,7 @@ export default function ClassicResultScreen() {
         knowledgeSectionsCount={data.knowledgeSections?.length}
         className="mt-6 w-full"
       />
+      <KnowledgeSectionsList sections={data.knowledgeSections} className="mt-6 w-full" />
       <View className="mt-10 w-full gap-3">
         <Pressable
           onPress={() => session.goToStep(0)}

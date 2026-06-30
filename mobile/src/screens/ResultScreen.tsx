@@ -25,6 +25,7 @@ import StepContentBlocks from '../components/StepContentBlocks';
 import StepFooterNav from '../components/StepFooterNav';
 import SourceCoverageCard from '../components/SourceCoverageCard';
 import TakeawaysGlassCard from '../components/TakeawaysGlassCard';
+import KnowledgeSectionsList from '../components/KnowledgeSectionsList';
 import { stepHaptic, useAppSession } from '../context/AppSessionContext';
 import { useViewAllScrollSpy } from '../hooks/useViewAllScrollSpy';
 import { getIntentLabel, getSourceTypeLabel } from '@shared/categories';
@@ -298,6 +299,7 @@ export default function ResultScreen() {
         limitations={data.sourceMetadata?.limitations}
         knowledgeSectionsCount={data.knowledgeSections?.length}
       />
+      <KnowledgeSectionsList sections={data.knowledgeSections} />
 
       <View className="mt-10 flex-row flex-wrap gap-3" style={styles.completionActions}>
         {[
