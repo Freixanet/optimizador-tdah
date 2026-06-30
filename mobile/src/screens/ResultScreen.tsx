@@ -161,7 +161,7 @@ export default function ResultScreen() {
         <View className="flex-row items-center gap-2">
           <AppIcon size={20} />
           <Text className="text-sm font-bold tracking-widest uppercase text-neutral-900 dark:text-neutral-100">
-            Idea central
+            Núcleo
           </Text>
         </View>
         {!session.isComplete && totalMinutes !== null ? (
@@ -301,7 +301,7 @@ export default function ResultScreen() {
             fullWidth: true,
           },
           {
-            label: 'Preguntar',
+            label: 'Preguntar al mapa',
             icon: MessageSquareText,
             onPress: () => {
               session.setChatOpen(true);
@@ -325,7 +325,7 @@ export default function ResultScreen() {
             fullWidth: true,
           },
           {
-            label: 'Nuevo mapa',
+            label: 'Crear mapa',
             icon: SquarePen,
             variant: 'accent' as const,
             onPress: session.handleNewMap,
@@ -431,7 +431,7 @@ export default function ResultScreen() {
             </View>
             {session.isStreamGenerating ? (
               <Text className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">
-                Generando mapa…
+                Ordenando el mapa…
               </Text>
             ) : null}
           </View>

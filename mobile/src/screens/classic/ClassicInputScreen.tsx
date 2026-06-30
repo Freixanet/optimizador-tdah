@@ -57,7 +57,7 @@ export default function ClassicInputScreen() {
     ? 'Añade una indicación (opcional)…'
     : session.uploadedFile
       ? 'Archivo adjunto listo para transformar'
-      : 'Pega texto, un enlace de YouTube o una transcripción…';
+      : 'Convierte texto, enlace o PDF en un mapa…';
 
   return (
     <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-neutral-50 dark:bg-neutral-900">

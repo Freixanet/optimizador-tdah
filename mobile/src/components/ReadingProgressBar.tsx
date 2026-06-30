@@ -168,12 +168,12 @@ export default function ReadingProgressBar({
           {!isComplete && onToggleViewMode ? (
             <FloatingGlassButton
               onPress={onToggleViewMode}
-              accessibilityLabel={viewAll ? 'Cambiar a paso a paso' : 'Cambiar a vista completa'}
+              accessibilityLabel={viewAll ? 'Cambiar a paso a paso' : 'Cambiar a mapa completo'}
               shape="rounded"
             >
               {viewAll ? <List size={14} color={viewModeIconColor} /> : <Layers size={14} color={viewModeIconColor} />}
               <Text className={`text-[11px] font-semibold ${viewModeLabelClass}`}>
-                {viewAll ? 'Paso a paso' : 'Vista completa'}
+                {viewAll ? 'Paso a paso' : 'Mapa completo'}
               </Text>
             </FloatingGlassButton>
           ) : null}

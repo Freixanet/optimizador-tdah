@@ -7,9 +7,9 @@ import CompletionGlassButton from './CompletionGlassButton';
 
 const PHASES = [
   'Leyendo la fuente',
-  'Detectando la estructura',
-  'Destilando el núcleo',
-  'Generando los pasos',
+  'Extrayendo señal',
+  'Ordenando el mapa',
+  'Preparando lectura',
 ] as const;
 
 const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*+<>?';

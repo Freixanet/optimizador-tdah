@@ -33,7 +33,7 @@ export default function SourceMetadataGlassCard({
         <View className="px-5 py-4">
           <View className="flex-row flex-wrap items-center gap-2">
             <Text className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 dark:text-neutral-400">
-              Fuente detectada
+              Señal extraída
             </Text>
             <Text className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
               {sourceMetadata.label}

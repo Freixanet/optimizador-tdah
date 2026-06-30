@@ -139,9 +139,9 @@ export default function HistorySheet({
   );
   const listData = useMemo(
     () => [
-      ...(pinnedEntries.length ? [{ type: 'header' as const, id: 'pinned-header', title: 'Fijados' }] : []),
+      ...(pinnedEntries.length ? [{ type: 'header' as const, id: 'pinned-header', title: 'Mapas fijados' }] : []),
       ...pinnedEntries.map((entry) => ({ type: 'entry' as const, entry })),
-      ...(regularEntries.length ? [{ type: 'header' as const, id: 'recent-header', title: 'Recientes' }] : []),
+      ...(regularEntries.length ? [{ type: 'header' as const, id: 'recent-header', title: 'Mapas recientes' }] : []),
       ...regularEntries.map((entry) => ({ type: 'entry' as const, entry })),
     ],
     [pinnedEntries, regularEntries]
@@ -290,7 +290,7 @@ export default function HistorySheet({
                     : 'text-neutral-600 dark:text-neutral-300'
                 }`}
               >
-                Idea central
+                Núcleo del mapa
               </Text>
             </Pressable>
 
@@ -424,13 +424,13 @@ export default function HistorySheet({
             onNewMap?.();
             onClose();
           }}
-          accessibilityLabel="Nuevo mapa"
+          accessibilityLabel="Crear mapa"
           shape="pill"
           tone="accent"
           compact
         >
           <SquarePen size={17} color="#ffffff" />
-          <Text className="text-[15px] font-bold text-white">Nuevo mapa</Text>
+          <Text className="text-[15px] font-bold text-white">Crear mapa</Text>
         </FloatingGlassButton>
       </View>
 

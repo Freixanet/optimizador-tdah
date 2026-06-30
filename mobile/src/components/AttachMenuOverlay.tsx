@@ -60,6 +60,7 @@ export default function AttachMenuOverlay({
             left: -12,
             right: -12,
             bottom: -insets.bottom - 100,
+            zIndex: 100,
           },
         ]}
       >
@@ -101,7 +102,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0, 0, 0, 0.11)',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
     zIndex: 100,
   },
   menu: {

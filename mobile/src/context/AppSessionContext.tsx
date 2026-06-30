@@ -307,11 +307,11 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       ? 'Añade una indicación sobre el video (opcional)…'
       : uploadedFile
         ? 'Archivo adjunto listo para convertir'
-        : 'Pega texto, un artículo, un enlace o una transcripción…';
+        : 'Convierte texto, enlace o PDF en un mapa…';
 
   const progressLabel = useMemo(() => {
     if (isComplete) return 'Mapa completado';
-    if (viewAll) return 'Vista completa';
+    if (viewAll) return 'Mapa completo';
     if (currentStep === 0) return 'Introducción';
     return `Paso ${currentStep} de ${totalSteps}`;
   }, [currentStep, isComplete, totalSteps, viewAll]);

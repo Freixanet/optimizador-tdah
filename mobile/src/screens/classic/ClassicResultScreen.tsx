@@ -122,7 +122,7 @@ export default function ClassicResultScreen() {
         <View className="flex-row items-center gap-2">
           <AppIcon size={20} />
           <Text className="text-sm font-bold tracking-widest uppercase text-neutral-900 dark:text-neutral-100">
-            El Nucleo
+            Núcleo
           </Text>
         </View>
         {!session.isComplete && totalMinutes !== null ? (
@@ -216,12 +216,12 @@ export default function ClassicResultScreen() {
         <View className="items-center">
           <FloatingGlassButton
             onPress={session.handleNewMap}
-            accessibilityLabel="Nuevo mapa"
+            accessibilityLabel="Crear mapa"
             shape="pill"
             tone="accent"
           >
             <SquarePen size={18} color="#fff" />
-            <Text className="text-[15px] font-bold text-white">Nuevo mapa</Text>
+            <Text className="text-[15px] font-bold text-white">Crear mapa</Text>
           </FloatingGlassButton>
         </View>
       </View>

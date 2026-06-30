@@ -99,10 +99,10 @@ export default function InputScreen() {
                 {showHomeCopy ? (
                   <View className="items-center px-4 max-w-sm -mt-4">
                     <Text className="text-center text-[15px] leading-6 text-neutral-600 dark:text-neutral-400">
-                      Separa lo importante del ruido.
+                      Separa la señal del ruido.
                     </Text>
                     <Text className="mt-2.5 text-center text-[13px] leading-5 text-neutral-500 dark:text-neutral-500">
-                      Pega texto, enlaces, vídeos o PDFs y conviértelos en un mapa guiado.
+                      Convierte cualquier texto, enlace o PDF en un mapa cognitivo.
                     </Text>
                     <LoadingPreviewButton onPress={session.previewLoadingScreen} />
                   </View>
