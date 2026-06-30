@@ -674,10 +674,8 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         uploadedFile?.name || inputText.trim().split('\n')[0]?.slice(0, 80) || 'Fuente analizada';
 
       // Model selection is not user-facing in the current mobile UI, so stale persisted model preferences must not override depth-based routing.
-      let finalPreferredModel = 'auto';
-      if (depthPreference === 'rapido') {
-        finalPreferredModel = 'gemini-3.1-flash-lite';
-      }
+      const finalPreferredModel =
+        depthPreference === 'profundo' ? 'auto' : 'gemini-3.1-flash-lite';
 
       let body: TransformRequest;
       if (uploadedFile?.isPdf && uploadedFile.fileData) {

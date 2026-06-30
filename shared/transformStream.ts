@@ -256,6 +256,11 @@ export async function fetchTransformWithProgress({
   const resolvedIdleTimeoutMs = idleTimeoutMs ?? resolveTransformIdleTimeoutMs(resolvedDepth);
   const resolvedFallbackTimeoutMs =
     fallbackTimeoutMs ?? resolveTransformFallbackTimeoutMs(resolvedDepth);
+  const resolvedStreamTimeoutMs = (() => {
+    if (resolvedDepth === 'rapido') return 20000;
+    if (resolvedDepth === 'profundo') return 45000;
+    return 25000; // estandar
+  })();
 
   const wrappedHandlers: TransformStreamHandlers = {
     onPartial: (map) => {
@@ -283,7 +288,7 @@ export async function fetchTransformWithProgress({
         signal,
       },
       {
-        timeoutMs: 20000,
+        timeoutMs: resolvedStreamTimeoutMs,
         timeoutMessage: 'La generación está tardando demasiado en empezar. Inténtalo de nuevo.',
       }
     );
